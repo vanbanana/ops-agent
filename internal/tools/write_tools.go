@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -107,16 +108,24 @@ func (t *DeleteFileTool) Execute(ctx context.Context, args map[string]any) (Resu
 	path, _ := args["path"].(string)
 	cleaned := filepath.Clean(path)
 
-	// Safety: only allow in /tmp, /var/log, /var/tmp
-	allowed := false
-	for _, prefix := range []string{"/tmp/", "/var/log/", "/var/tmp/"} {
-		if strings.HasPrefix(cleaned, prefix) {
-			allowed = true
-			break
+	// Expand ~ to home directory
+	if strings.HasPrefix(cleaned, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			cleaned = filepath.Join(home, cleaned[2:])
 		}
 	}
-	if !allowed {
-		return Result{Error: fmt.Sprintf("路径 %q 不在允许删除范围内 (/tmp, /var/log, /var/tmp)", cleaned)}, nil
+
+	// Safety: block only truly critical system paths
+	for _, prefix := range []string{"/etc/", "/boot/", "/sys/", "/proc/", "/usr/", "/dev/"} {
+		if strings.HasPrefix(cleaned, prefix) {
+			return Result{Error: fmt.Sprintf("路径 %q 是系统关键路径，即使确认也不允许删除", cleaned)}, nil
+		}
+	}
+
+	// Block deleting directories (only files)
+	if strings.Contains(cleaned, "..") {
+		return Result{Error: "路径包含 .. ，拒绝操作"}, nil
 	}
 
 	cmd := exec.CommandContext(ctx, "rm", "-f", cleaned)
