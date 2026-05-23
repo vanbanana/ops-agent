@@ -151,9 +151,9 @@ export const PermissionSettings: FC = () => {
 
   const typeLabel = (t: string) => {
     switch (t) {
-      case 'readonly': return '🟢 只读'
-      case 'readwrite': return '🟡 读写'
-      case 'write': return '🔴 写'
+      case 'readonly': return '只读'
+      case 'readwrite': return '读写'
+      case 'write': return '写'
       default: return t
     }
   }
@@ -161,7 +161,8 @@ export const PermissionSettings: FC = () => {
   return (
     <div style={{ flex: 1, overflow: 'auto', background: 'var(--ops-bg-canvas)', padding: '24px 48px' }}>
       <h2 style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 16, fontWeight: 600, color: 'var(--ops-fg-primary)', margin: '0 0 24px 0' }}>
-        🛡️ 权限设置
+        <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 6 }}>shield</span>
+        权限设置
       </h2>
 
       {/* Permission Mode */}
@@ -172,13 +173,15 @@ export const PermissionSettings: FC = () => {
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer' }}>
           <input type="radio" name="mode" checked={mode === 'default'} onChange={() => handleModeChange('default')} />
           <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-fg-primary)' }}>
-            🔒 标准模式 — 写操作需要手动确认
+            <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 4 }}>lock</span>
+            标准模式 — 写操作需要手动确认
           </span>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
           <input type="radio" name="mode" checked={mode === 'auto_approve'} onChange={() => handleModeChange('auto_approve')} />
           <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-status-warn)' }}>
-            🔓 全权限模式 — 自动执行所有操作（谨慎）
+            <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 4 }}>lock_open</span>
+            全权限模式 — 自动执行所有操作（谨慎）
           </span>
         </label>
       </div>
@@ -196,7 +199,7 @@ export const PermissionSettings: FC = () => {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 搜索命令..."
+          placeholder="搜索命令..."
           style={{
             width: '100%',
             padding: '6px 10px',
@@ -267,7 +270,7 @@ export const PermissionSettings: FC = () => {
         {error && (
           <div style={{ padding: '8px 12px', borderRadius: 4, background: 'rgba(255,59,48,0.1)', border: '1px solid var(--ops-status-danger)', marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-status-danger)' }}>
-              🔴 {error}
+              {error}
             </span>
           </div>
         )}
@@ -370,7 +373,7 @@ export const PermissionSettings: FC = () => {
 
             {error && (
               <div style={{ marginBottom: 12, fontFamily: 'var(--ops-font-ui)', fontSize: 11, color: 'var(--ops-status-danger)' }}>
-                ⚠️ {error}
+                {error}
               </div>
             )}
 

@@ -97,6 +97,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
       {pendingPermission && pendingPermission.status === 'pending' && onPermissionRespond && (
         <PermissionBanner permission={pendingPermission} onRespond={onPermissionRespond} />
       )}
+
       {/* Command palette dropdown */}
       {showCommands && (
         <div
@@ -144,6 +145,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
         </div>
       )}
 
+      {/* Input area */}
       <div
         style={{
           display: 'flex',
@@ -160,70 +162,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
           onKeyDown={handleKeyDown}
-          placeholder={isDisabledByPermission ? "等待确认操作..." : "描述你的运维诉求，例如：看看 /var 还剩多少空间"}
-          disabled={effectiveDisabled}
-          rows={1}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            resize: 'none',
-            fontFamily: 'var(--ops-font-ui)',
-            fontSize: 13,
-            lineHeight: 1.5,
-            color: 'var(--ops-fg-primary)',
-            minHeight: 20,
-            maxHeight: 200,
-          }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 10, color: charColor }}>
-            {text.length}/{MAX_CHARS}
-          </span>
-          <button
-            onClick={handleSend}
-            disabled={effectiveDisabled || !text.trim()}
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 4,
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: text.trim() && !effectiveDisabled ? 'pointer' : 'not-allowed',
-              background: text.trim() && !effectiveDisabled ? 'var(--ops-fg-primary)' : 'var(--ops-border-default)',
-              opacity: text.trim() && !effectiveDisabled ? 1 : 0.5,
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--ops-bg-canvas)' }}>
-              arrow_upward
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 8,
-          padding: '8px 12px',
-          borderRadius: 4,
-          background: 'var(--ops-bg-input)',
-          border: '1px solid var(--ops-border-default)',
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
-          onKeyDown={handleKeyDown}
-          placeholder={isDisabledByPermission ? "等待确认操作..." : "描述你的运维诉求，例如：看看 /var 还剩多少空间"}
+          placeholder={isDisabledByPermission ? '等待确认操作...' : '描述你的运维诉求，例如：看看 /var 还剩多少空间'}
           disabled={effectiveDisabled}
           rows={1}
           style={{
@@ -267,7 +206,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
         </div>
       </div>
 
-      {/* Bottom toolbar: permission mode toggle (§12) */}
+      {/* Bottom toolbar: permission mode toggle */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '4px 0', position: 'relative' }}>
         <button
           onClick={() => {
@@ -321,11 +260,11 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
               border: '1px solid var(--ops-border-default)',
               borderRadius: 6,
               zIndex: 200,
-              width: 260,
+              width: 280,
             }}
           >
             <div style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-fg-secondary)', marginBottom: 8 }}>
-              ⚠️ 全权限模式下所有操作将自动执行，不再弹出确认。
+              全权限模式下所有操作将自动执行，不再弹出确认。
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
