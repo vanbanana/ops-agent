@@ -11,7 +11,7 @@ import { TerminalDrawer } from './components/TerminalDrawer'
 import { StatusBar } from './components/StatusBar'
 import { PlaceholderPage } from './components/PlaceholderPage'
 import { DesktopMode } from './pages/DesktopMode'
-import { PermissionSettings } from './pages/PermissionSettings'
+import { SettingsPage } from './pages/SettingsPage'
 import { MultiAgentChat } from './components/MultiAgentChat'
 import { SuggestedPrompts } from './components/SuggestedPrompts'
 import { useHealth } from './hooks/useHealth'
@@ -344,7 +344,7 @@ function App() {
       case 'audit':
         return <PlaceholderPage icon="description" title="审计日志" description="审计日志功能开发中 (Task 10)" />
       case 'settings':
-        return <PermissionSettings />
+        return <SettingsPage />
       case 'desktop':
         return (
           <DesktopMode
