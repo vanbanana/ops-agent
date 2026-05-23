@@ -34,7 +34,7 @@ export const MonitorPanel: FC<MonitorPanelProps> = ({ resources }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {/* CPU / Load */}
       <MetricSection title="CPU / 负载">
-        <InfoBar left={`负载 ${resources.load >= 0 ? resources.load.toFixed(2) : '--'}`} right="" />
+        <InfoBar left={`负载 ${resources.load >= 0 ? resources.load.toFixed(2) : '--'}`} right={resources.load >= 4 ? '偏高' : resources.load >= 0 ? '正常' : ''} />
         <MiniChart data={cpuHistory} color="#7B68EE" maxY={10} unit="" />
       </MetricSection>
 
@@ -43,6 +43,10 @@ export const MonitorPanel: FC<MonitorPanelProps> = ({ resources }) => {
         <InfoBar
           left={`总计 ${resources.memory.total || '--'}`}
           right={`使用率 ${resources.memory.percent >= 0 ? resources.memory.percent + '%' : '--'}`}
+        />
+        <InfoBar
+          left={`已用 ${resources.memory.used || '--'}`}
+          right={resources.memory.percent >= 90 ? '警告: 内存不足' : resources.memory.percent >= 75 ? '偏高' : '正常'}
         />
         <MiniChart data={memHistory} color="#00CED1" maxY={100} unit="%" />
       </MetricSection>
@@ -173,7 +177,7 @@ const MiniChart: FC<{ data: DataPoint[]; color: string; maxY: number; unit: stri
   return (
     <canvas
       ref={canvasRef}
-      style={{ width: '100%', height: 60, display: 'block' }}
+      style={{ width: '100%', height: 120, display: 'block' }}
     />
   )
 }

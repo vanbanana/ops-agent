@@ -396,7 +396,7 @@ function App() {
               top: '50%',
               transform: 'translateY(-50%)',
               width: 24,
-              height: 48,
+              height: 80,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -408,7 +408,7 @@ function App() {
               zIndex: 10,
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--ops-fg-muted)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--ops-fg-muted)' }}>
               chevron_left
             </span>
           </button>

@@ -45,7 +45,7 @@ export const RightPanel: FC<RightPanelProps> = ({
   return (
     <aside
       style={{
-        width: 320,
+        width: 256,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',

@@ -23,7 +23,7 @@ export const SideNav: FC<SideNavProps> = ({ active, onNavigate }) => {
   return (
     <nav
       style={{
-        width: 44,
+        width: 56,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
@@ -65,8 +65,8 @@ const NavBtn: FC<{ icon: string; active: boolean; onClick: () => void; title: st
     onClick={onClick}
     title={title}
     style={{
-      width: 36,
-      height: 36,
+      width: 44,
+      height: 44,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -77,6 +77,6 @@ const NavBtn: FC<{ icon: string; active: boolean; onClick: () => void; title: st
       color: active ? 'var(--ops-fg-primary)' : 'var(--ops-fg-muted)',
     }}
   >
-    <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{icon}</span>
+    <span className="material-symbols-outlined" style={{ fontSize: 22 }}>{icon}</span>
   </button>
 )
