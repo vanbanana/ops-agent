@@ -15,6 +15,8 @@ func RegisterAllProbes(r ToolRegistry) {
 		NewProbeServiceStatus(),
 		NewProbeFileHolders(),
 		NewProbeSystemInfo(),
+		NewBashTool(),
+		NewFileViewTool(),
 	}
 	for _, p := range probes {
 		_ = r.Register(p)

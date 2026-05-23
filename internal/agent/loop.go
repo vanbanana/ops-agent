@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"ops-agent/internal/agent/prompt"
+	"ops-agent/internal/llm"
 	"ops-agent/internal/safety"
 	"ops-agent/internal/tools"
 )
 
 const MaxToolRounds = 10
-const MaxMessageTokens = 12000 // ~80% of 16K context, rough estimate at 4 bytes/token
 
 // Event is an SSE event sent to the client.
 type Event struct {
@@ -130,6 +130,10 @@ func (a *Agent) RunStreamWithMode(ctx context.Context, sessionID, userMessage st
 }
 
 func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage string, history []Message, out chan<- Event) {
+	// Get model-aware token budget for compaction
+	modelInfo := llm.GetModelInfo(a.cfg.Model)
+	tokenBudget := modelInfo.ContextBudget()
+
 	// Build messages with history context
 	messages := []Message{
 		{Role: "system", Content: buildSystemPrompt(a.registry)},
@@ -149,7 +153,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 		default:
 		}
 
-		messages = compactMessages(messages, MaxMessageTokens)
+		messages = compactMessages(messages, tokenBudget)
 
 		// Try streaming first, fallback to non-streaming
 		stream, streamErr := a.llm.ChatStream(ctx, ChatRequest{

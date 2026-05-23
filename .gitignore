@@ -38,3 +38,4 @@ test-logs/**/*.jsonl
 
 # Build artifacts
 ops-agent-server
+ops-cli
