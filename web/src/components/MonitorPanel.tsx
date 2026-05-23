@@ -109,7 +109,7 @@ const MiniChart: FC<{ data: DataPoint[]; color: string; maxY: number; unit: stri
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || data.length < 2) return
+    if (!canvas || data.length < 1) return
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -143,22 +143,32 @@ const MiniChart: FC<{ data: DataPoint[]; color: string; maxY: number; unit: stri
     ctx.beginPath()
 
     data.forEach((point, i) => {
-      const x = (i / (data.length - 1)) * w
+      const x = data.length === 1 ? w / 2 : (i / (data.length - 1)) * w
       const y = h - (point.value / actualMax) * h
       if (i === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     })
+
+    // For single point, draw a small horizontal line
+    if (data.length === 1) {
+      const y = h - (data[0].value / actualMax) * h
+      ctx.moveTo(0, y)
+      ctx.lineTo(w, y)
+    }
+
     ctx.stroke()
 
     // Draw fill gradient
-    ctx.lineTo(w, h)
-    ctx.lineTo(0, h)
-    ctx.closePath()
-    const gradient = ctx.createLinearGradient(0, 0, 0, h)
-    gradient.addColorStop(0, color + '20')
-    gradient.addColorStop(1, 'transparent')
-    ctx.fillStyle = gradient
-    ctx.fill()
+    if (data.length > 1) {
+      ctx.lineTo(w, h)
+      ctx.lineTo(0, h)
+      ctx.closePath()
+      const gradient = ctx.createLinearGradient(0, 0, 0, h)
+      gradient.addColorStop(0, color + '20')
+      gradient.addColorStop(1, 'transparent')
+      ctx.fillStyle = gradient
+      ctx.fill()
+    }
 
     // X-axis labels
     ctx.fillStyle = '#707070'
@@ -170,7 +180,7 @@ const MiniChart: FC<{ data: DataPoint[]; color: string; maxY: number; unit: stri
     }
   }, [data, color, maxY])
 
-  if (data.length < 2) {
+  if (data.length < 1) {
     return <EmptyState />
   }
 
