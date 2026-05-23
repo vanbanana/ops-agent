@@ -1,5 +1,5 @@
 // Data: GET /api/v1/sessions (未就绪，本地状态管理)
-import { type FC } from 'react'
+import { type FC, useState } from 'react'
 import type { Session } from '../types/api'
 
 interface SessionListProps {
@@ -7,6 +7,7 @@ interface SessionListProps {
   activeId: string | null
   onSelect: (id: string) => void
   onNew: () => void
+  onDelete: (id: string) => void
 }
 
 export const SessionList: FC<SessionListProps> = ({
@@ -14,7 +15,25 @@ export const SessionList: FC<SessionListProps> = ({
   activeId,
   onSelect,
   onNew,
+  onDelete,
 }) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (confirmDeleteId === id) {
+      // Second click = confirm
+      onDelete(id)
+      setConfirmDeleteId(null)
+    } else {
+      // First click = ask confirm
+      setConfirmDeleteId(id)
+      // Auto-cancel after 3s
+      setTimeout(() => setConfirmDeleteId(prev => prev === id ? null : prev), 3000)
+    }
+  }
+
   return (
     <aside
       style={{
@@ -67,50 +86,91 @@ export const SessionList: FC<SessionListProps> = ({
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {sessions.map((session) => {
           const isActive = activeId === session.id
+          const isHovered = hoveredId === session.id
+          const isConfirming = confirmDeleteId === session.id
           return (
-            <button
+            <div
               key={session.id}
-              onClick={() => onSelect(session.id)}
+              onMouseEnter={() => setHoveredId(session.id)}
+              onMouseLeave={() => { setHoveredId(null); setConfirmDeleteId(prev => prev === session.id ? null : prev) }}
               style={{
-                width: '100%',
+                position: 'relative',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                padding: '8px 12px',
-                border: 'none',
-                textAlign: 'left',
-                cursor: 'pointer',
-                background: isActive ? 'var(--ops-bg-elevated)' : 'transparent',
-                borderLeft: isActive ? '2px solid var(--ops-status-info)' : '2px solid transparent',
+                alignItems: 'center',
               }}
             >
-              <span
+              <button
+                onClick={() => onSelect(session.id)}
                 style={{
-                  fontFamily: 'var(--ops-font-ui)',
-                  fontSize: 12,
-                  color: 'var(--ops-fg-primary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  padding: '8px 12px',
+                  paddingRight: isHovered ? 28 : 12,
+                  border: 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  background: isActive ? 'var(--ops-bg-elevated)' : 'transparent',
+                  borderLeft: isActive ? '2px solid var(--ops-status-info)' : '2px solid transparent',
+                  minWidth: 0,
                 }}
               >
-                {session.title}
-              </span>
-              {session.last_message && (
                 <span
                   style={{
-                    fontFamily: 'var(--ops-font-mono)',
-                    fontSize: 10,
-                    color: 'var(--ops-fg-muted)',
+                    fontFamily: 'var(--ops-font-ui)',
+                    fontSize: 12,
+                    color: 'var(--ops-fg-primary)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {session.last_message.slice(0, 28)}
+                  {session.title}
                 </span>
+                {session.last_message && (
+                  <span
+                    style={{
+                      fontFamily: 'var(--ops-font-mono)',
+                      fontSize: 10,
+                      color: 'var(--ops-fg-muted)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {session.last_message.slice(0, 28)}
+                  </span>
+                )}
+              </button>
+              {/* Delete button — visible on hover */}
+              {isHovered && (
+                <button
+                  onClick={(e) => handleDelete(e, session.id)}
+                  title={isConfirming ? '再次点击确认删除' : '删除会话'}
+                  style={{
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 20,
+                    height: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 3,
+                    border: 'none',
+                    background: isConfirming ? 'var(--ops-status-danger)' : 'transparent',
+                    cursor: 'pointer',
+                    color: isConfirming ? '#fff' : 'var(--ops-fg-muted)',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                    {isConfirming ? 'check' : 'delete'}
+                  </span>
+                </button>
               )}
-            </button>
+            </div>
           )
         })}
 

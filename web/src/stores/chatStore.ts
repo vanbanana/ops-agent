@@ -79,6 +79,7 @@ type Action =
   | { type: 'ADD_AGENT_MESSAGE'; message: AgentChatMessage }
   | { type: 'SET_MULTI_AGENT_STATUS'; role: string | null; round: number; status: string }
   | { type: 'CLEAR_MULTI_AGENT' }
+  | { type: 'DELETE_SESSION'; sessionId: string }
   | { type: 'SET_PERMISSION_REQUEST'; sessionId: string; data: PermissionRequestData }
   | { type: 'UPDATE_PERMISSION_STATUS'; status: 'allowed' | 'denied' | 'expired' }
   | { type: 'SET_PERMISSION_MODE'; mode: 'default' | 'auto_approve' }
@@ -216,6 +217,16 @@ function chatReducer(state: ChatState, action: Action): ChatState {
 
     case 'CREATE_SESSION':
       return { ...state, sessions: [action.session, ...state.sessions], activeSessionId: action.session.id, contextUsage: 0 }
+
+    case 'DELETE_SESSION': {
+      const newSessions = state.sessions.filter(s => s.id !== action.sessionId)
+      const newMessages = { ...state.messagesBySession }
+      delete newMessages[action.sessionId]
+      const newActiveId = state.activeSessionId === action.sessionId
+        ? (newSessions.length > 0 ? newSessions[0].id : null)
+        : state.activeSessionId
+      return { ...state, sessions: newSessions, messagesBySession: newMessages, activeSessionId: newActiveId, contextUsage: 0 }
+    }
 
     case 'SET_MULTI_AGENT_MODE':
       return { ...state, multiAgentMode: action.enabled }

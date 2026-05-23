@@ -277,6 +277,15 @@ function App() {
     sessionIdRef.current = id
   }, [dispatch])
 
+  const handleDeleteSession = useCallback((id: string) => {
+    dispatch({ type: 'DELETE_SESSION', sessionId: id })
+    // If we deleted the current session, update ref
+    if (sessionIdRef.current === id) {
+      const remaining = state.sessions.filter(s => s.id !== id)
+      sessionIdRef.current = remaining.length > 0 ? remaining[0].id : null
+    }
+  }, [dispatch, state.sessions])
+
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
     if (lastUserMsg) {
@@ -313,7 +322,7 @@ function App() {
       case 'agent':
         return (
           <>
-            <SessionList sessions={state.sessions} activeId={state.activeSessionId} onSelect={handleSelectSession} onNew={handleNewSession} />
+            <SessionList sessions={state.sessions} activeId={state.activeSessionId} onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} />
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--ops-bg-canvas)', overflow: 'hidden', minWidth: 0 }}>
               <ResourceStrip resources={state.resources} />
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
