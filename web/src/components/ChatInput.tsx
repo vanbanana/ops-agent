@@ -10,6 +10,7 @@ interface ChatInputProps {
   onPermissionRespond?: (requestId: string, action: 'allow' | 'allow_session' | 'deny') => void
   permissionMode?: 'default' | 'auto_approve'
   onPermissionModeChange?: (mode: 'default' | 'auto_approve') => void
+  contextUsage?: number
 }
 
 const MAX_CHARS = 4000
@@ -24,7 +25,7 @@ const COMMANDS = [
   { cmd: '/clear', label: '清空对话', message: '清空对话' },
 ]
 
-export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermission, onPermissionRespond, permissionMode = 'default', onPermissionModeChange }) => {
+export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermission, onPermissionRespond, permissionMode = 'default', onPermissionModeChange, contextUsage = 0 }) => {
   const [text, setText] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [filteredCommands, setFilteredCommands] = useState(COMMANDS)
@@ -191,6 +192,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <ToolbarBtn icon="tag" title="命令面板 (/)" onClick={() => { setText('/'); textareaRef.current?.focus() }} />
             <ToolbarBtn icon="attach_file" title="附件" onClick={() => {}} />
+            <ContextRing percent={contextUsage} />
           </div>
 
           {/* Right: char count + mode toggle + send */}
@@ -343,3 +345,29 @@ const ToolbarBtn: FC<{ icon: string; title: string; onClick: () => void }> = ({ 
     <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{icon}</span>
   </button>
 )
+
+// Context usage ring indicator
+const ContextRing: FC<{ percent: number }> = ({ percent }) => {
+  const size = 18
+  const stroke = 2.5
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const filled = (percent / 100) * circumference
+  const color = percent >= 90 ? 'var(--ops-status-danger)' : percent >= 70 ? 'var(--ops-status-warn)' : 'var(--ops-status-ok)'
+
+  return (
+    <div title={`上下文使用 ${percent}%`} style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        {/* Track */}
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--ops-border-subtle)" strokeWidth={stroke} />
+        {/* Progress */}
+        <circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none"
+          stroke={color} strokeWidth={stroke}
+          strokeDasharray={`${filled} ${circumference - filled}`}
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  )
+}

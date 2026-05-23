@@ -49,6 +49,7 @@ export interface ChatState {
   multiAgentStatus: string
   pendingPermission: PermissionRequestData | null
   permissionMode: 'default' | 'auto_approve'
+  contextUsage: number  // 0-100 percent of context window used
 }
 
 // Helper: get messages for a session (never undefined)
@@ -81,6 +82,7 @@ type Action =
   | { type: 'SET_PERMISSION_REQUEST'; sessionId: string; data: PermissionRequestData }
   | { type: 'UPDATE_PERMISSION_STATUS'; status: 'allowed' | 'denied' | 'expired' }
   | { type: 'SET_PERMISSION_MODE'; mode: 'default' | 'auto_approve' }
+  | { type: 'SET_CONTEXT_USAGE'; percent: number }
 
 const initialResources: ResourceData = {
   disk: [],
@@ -106,6 +108,7 @@ const initialState: ChatState = {
   multiAgentStatus: '',
   pendingPermission: null,
   permissionMode: 'default',
+  contextUsage: 0,
 }
 
 // Helper to update messages for a specific session
@@ -233,6 +236,9 @@ function chatReducer(state: ChatState, action: Action): ChatState {
 
     case 'SET_PERMISSION_MODE':
       return { ...state, permissionMode: action.mode }
+
+    case 'SET_CONTEXT_USAGE':
+      return { ...state, contextUsage: action.percent }
 
     default:
       return state

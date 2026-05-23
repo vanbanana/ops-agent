@@ -145,6 +145,14 @@ function App() {
       dispatch({ type: 'UPDATE_LAST_AGENT', sessionId, updater: (m) => ({ ...m, content: data.reply }) })
       dispatch({ type: 'SET_THINKING', sessionId, data: { status: 'done' } })
       dispatch({ type: 'ADD_REASONING_STEP', step: { phase: 'output', timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }), data: { tokens_used: data.tokens_used, elapsed_ms: data.elapsed_ms }, status: 'done' } })
+      // Calculate context usage percentage (prompt tokens / context budget)
+      const tokensUsed = data.tokens_used as { prompt?: number; completion?: number } | number | undefined
+      if (tokensUsed && typeof tokensUsed === 'object' && tokensUsed.prompt) {
+        // Context budget: 80% of (context_window - max_output) ≈ 19660 for mimo-v2.5-pro (32768-8192)*0.8
+        const contextBudget = 19660
+        const percent = Math.min(100, Math.round((tokensUsed.prompt / contextBudget) * 100))
+        dispatch({ type: 'SET_CONTEXT_USAGE', percent })
+      }
     },
     onError: (data) => {
       const sessionId = streamingForSessionRef.current || sessionIdRef.current
@@ -333,7 +341,7 @@ function App() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} permissionMode={state.permissionMode} onPermissionModeChange={handlePermissionModeChange} />
+              <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} permissionMode={state.permissionMode} onPermissionModeChange={handlePermissionModeChange} contextUsage={state.contextUsage} />
             </main>
           </>
         )
