@@ -386,6 +386,33 @@ function App() {
             onClose={() => setRightPanelVisible(false)}
           />
         )}
+        {!rightPanelVisible && pageMode !== 'desktop' && (
+          <button
+            onClick={() => setRightPanelVisible(true)}
+            title="展开侧栏"
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 24,
+              height: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--ops-bg-surface)',
+              border: '1px solid var(--ops-border-subtle)',
+              borderRight: 'none',
+              borderRadius: '4px 0 0 4px',
+              cursor: 'pointer',
+              zIndex: 10,
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--ops-fg-muted)' }}>
+              chevron_left
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Status Bar — 22px */}
