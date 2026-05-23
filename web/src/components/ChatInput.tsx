@@ -360,13 +360,15 @@ const ContextRing: FC<{ percent: number }> = ({ percent }) => {
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
         {/* Track */}
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--ops-border-subtle)" strokeWidth={stroke} />
-        {/* Progress */}
-        <circle
-          cx={size / 2} cy={size / 2} r={radius} fill="none"
-          stroke={color} strokeWidth={stroke}
-          strokeDasharray={`${filled} ${circumference - filled}`}
-          strokeLinecap="round"
-        />
+        {/* Progress — only render when percent > 0 */}
+        {percent > 0 && (
+          <circle
+            cx={size / 2} cy={size / 2} r={radius} fill="none"
+            stroke={color} strokeWidth={stroke}
+            strokeDasharray={`${filled} ${circumference - filled}`}
+            strokeLinecap="round"
+          />
+        )}
       </svg>
     </div>
   )
