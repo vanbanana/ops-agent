@@ -388,9 +388,6 @@ function App() {
             health={health}
             healthLoading={healthLoading}
             isStreaming={state.isStreaming}
-            showCopilot={pageMode === 'terminal'}
-            onSendMessage={handleSend}
-            messages={messages}
             onClose={() => setRightPanelVisible(false)}
           />
         )}

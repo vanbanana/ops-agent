@@ -1,11 +1,9 @@
-// Data: SSE events (推理链路) + POST /desktop/probe/* (系统监控) + AI副驾驶
-// 右侧面板: 系统监控(默认) | 推理链路 | AI副驾驶
+// Data: SSE events (推理链路) + POST /desktop/probe/* (系统监控)
+// 右侧面板: 系统监控(默认) | 推理链路
 import { type FC, useState } from 'react'
 import { ReasoningPanel } from './ReasoningPanel'
 import { MonitorPanel } from './MonitorPanel'
-import { ChatMessageComponent } from './ChatMessage'
-import { ChatInput } from './ChatInput'
-import type { ReasoningStep, ResourceData, HealthResponse, ChatMessage } from '../types/api'
+import type { ReasoningStep, ResourceData, HealthResponse } from '../types/api'
 
 interface RightPanelProps {
   reasoning: ReasoningStep[]
@@ -13,34 +11,23 @@ interface RightPanelProps {
   health: HealthResponse | null
   healthLoading: boolean
   isStreaming: boolean
-  showCopilot: boolean
-  onSendMessage: (msg: string) => void
-  messages: ChatMessage[]
   onClose: () => void
 }
 
-type Tab = 'monitor' | 'reasoning' | 'copilot'
+type Tab = 'monitor' | 'reasoning'
 
 export const RightPanel: FC<RightPanelProps> = ({
   reasoning,
   resources,
   isStreaming,
-  showCopilot,
-  onSendMessage,
-  messages,
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('monitor')
 
-  const tabs: Array<{ key: Tab; label: string }> = showCopilot
-    ? [
-        { key: 'monitor', label: '系统监控' },
-        { key: 'copilot', label: 'AI 副驾驶' },
-      ]
-    : [
-        { key: 'monitor', label: '系统监控' },
-        { key: 'reasoning', label: '推理链路' },
-      ]
+  const tabs: Array<{ key: Tab; label: string }> = [
+    { key: 'monitor', label: '系统监控' },
+    { key: 'reasoning', label: '推理链路' },
+  ]
 
   return (
     <aside
@@ -106,22 +93,6 @@ export const RightPanel: FC<RightPanelProps> = ({
       {activeTab === 'reasoning' && (
         <div style={{ flex: 1, overflow: 'auto', padding: '10px 12px' }}>
           <ReasoningPanel steps={reasoning} isStreaming={isStreaming} />
-        </div>
-      )}
-
-      {activeTab === 'copilot' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {messages.length === 0 && (
-                <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 11, color: 'var(--ops-fg-muted)', textAlign: 'center', padding: '20px 0' }}>
-                  在这里提问，AI 协助你操作
-                </span>
-              )}
-              {messages.map((msg) => <ChatMessageComponent key={msg.id} message={msg} />)}
-            </div>
-          </div>
-          <ChatInput onSend={onSendMessage} disabled={isStreaming} />
         </div>
       )}
     </aside>
