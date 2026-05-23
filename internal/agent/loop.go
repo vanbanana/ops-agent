@@ -302,11 +302,14 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			args := parseToolArgs(tc.Function.Arguments)
 			start := time.Now()
 
+			// Security check: only for bash tool (write tools have their own internal validation)
 			securityResult := "PASSED"
-			cmd := tc.Function.Name + " " + tc.Function.Arguments
-			vr := safety.ValidateCommand(cmd)
-			if vr.Status == safety.StatusBlocked {
-				securityResult = string(vr.Reason)
+			if tc.Function.Name == "bash" {
+				cmd := tc.Function.Name + " " + tc.Function.Arguments
+				vr := safety.ValidateCommand(cmd)
+				if vr.Status == safety.StatusBlocked {
+					securityResult = string(vr.Reason)
+				}
 			}
 
 			out <- Event{Type: "execute", Data: map[string]any{"tool": tc.Function.Name, "args": args, "security_check": securityResult}}
