@@ -123,7 +123,7 @@ function chatReducer(state: ChatState, action: Action): ChatState {
       return { ...state, sessions: action.sessions }
 
     case 'SET_ACTIVE_SESSION':
-      return { ...state, activeSessionId: action.id, reasoning: [] }
+      return { ...state, activeSessionId: action.id, reasoning: [], contextUsage: 0 }
 
     case 'ADD_MESSAGE':
       return updateSessionMessages(state, action.sessionId, msgs => [...msgs, action.message])
@@ -215,7 +215,7 @@ function chatReducer(state: ChatState, action: Action): ChatState {
       return { ...state, resources: { ...state.resources, ...action.data } }
 
     case 'CREATE_SESSION':
-      return { ...state, sessions: [action.session, ...state.sessions], activeSessionId: action.session.id }
+      return { ...state, sessions: [action.session, ...state.sessions], activeSessionId: action.session.id, contextUsage: 0 }
 
     case 'SET_MULTI_AGENT_MODE':
       return { ...state, multiAgentMode: action.enabled }
