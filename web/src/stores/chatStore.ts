@@ -48,6 +48,7 @@ export interface ChatState {
   multiAgentActiveRole: string | null
   multiAgentStatus: string
   pendingPermission: PermissionRequestData | null
+  permissionMode: 'default' | 'auto_approve'
 }
 
 // Helper: get messages for a session (never undefined)
@@ -79,6 +80,7 @@ type Action =
   | { type: 'CLEAR_MULTI_AGENT' }
   | { type: 'SET_PERMISSION_REQUEST'; sessionId: string; data: PermissionRequestData }
   | { type: 'UPDATE_PERMISSION_STATUS'; status: 'allowed' | 'denied' | 'expired' }
+  | { type: 'SET_PERMISSION_MODE'; mode: 'default' | 'auto_approve' }
 
 const initialResources: ResourceData = {
   disk: [],
@@ -103,6 +105,7 @@ const initialState: ChatState = {
   multiAgentActiveRole: null,
   multiAgentStatus: '',
   pendingPermission: null,
+  permissionMode: 'default',
 }
 
 // Helper to update messages for a specific session
@@ -227,6 +230,9 @@ function chatReducer(state: ChatState, action: Action): ChatState {
       if (!state.pendingPermission) return state
       // Once resolved, clear it after brief display
       return { ...state, pendingPermission: null }
+
+    case 'SET_PERMISSION_MODE':
+      return { ...state, permissionMode: action.mode }
 
     default:
       return state

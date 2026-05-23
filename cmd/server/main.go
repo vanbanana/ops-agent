@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"ops-agent/internal/agent"
@@ -375,6 +376,55 @@ func main() {
 
 	// Risk preview (Task 12)
 	previewEngine := safety.NewPreviewEngine()
+
+	// Configs CRUD (for whitelist and other settings)
+	r.Get("/api/v1/configs", func(w http.ResponseWriter, r *http.Request) {
+		keys := r.URL.Query().Get("keys")
+		result := map[string]string{}
+		if db != nil && keys != "" {
+			for _, k := range strings.Split(keys, ",") {
+				k = strings.TrimSpace(k)
+				var val string
+				err := db.QueryRow("SELECT value FROM configs WHERE key = ?", k).Scan(&val)
+				if err == nil {
+					result[k] = val
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": result})
+	})
+
+	r.Put("/api/v1/configs", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "invalid request body"})
+			return
+		}
+		if db == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]any{"code": 503, "error": "database not available"})
+			return
+		}
+		for k, v := range body {
+			val := fmt.Sprintf("%v", v)
+			if s, ok := v.(string); ok {
+				val = s
+			}
+			_, err := db.Exec(`INSERT OR REPLACE INTO configs (key, value, updated_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`, k, val)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]any{"code": 500, "error": err.Error()})
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "ok"}})
+	})
 
 	// Desktop probe — direct tool call without LLM (Task 14)
 	r.Post("/api/v1/desktop/probe/{name}", func(w http.ResponseWriter, r *http.Request) {

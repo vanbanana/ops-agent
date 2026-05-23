@@ -11,6 +11,7 @@ import { TerminalDrawer } from './components/TerminalDrawer'
 import { StatusBar } from './components/StatusBar'
 import { PlaceholderPage } from './components/PlaceholderPage'
 import { DesktopMode } from './pages/DesktopMode'
+import { PermissionSettings } from './pages/PermissionSettings'
 import { MultiAgentChat } from './components/MultiAgentChat'
 import { SuggestedPrompts } from './components/SuggestedPrompts'
 import { useHealth } from './hooks/useHealth'
@@ -32,6 +33,18 @@ function App() {
 
   // Poll resource data directly from /desktop/probe/* every 30s (Task 14)
   useResourcePolling(connected, dispatch)
+
+  // Load permission mode from backend on connect
+  useEffect(() => {
+    if (connected) {
+      fetch('/api/v1/permission/mode')
+        .then(res => res.json())
+        .then(data => {
+          if (data?.data?.mode) dispatch({ type: 'SET_PERMISSION_MODE', mode: data.data.mode })
+        })
+        .catch(() => {})
+    }
+  }, [connected, dispatch])
 
   // Load demo data ONLY if backend confirmed unreachable (not during initial loading)
   useEffect(() => {
@@ -268,6 +281,16 @@ function App() {
     dispatch({ type: 'UPDATE_PERMISSION_STATUS', status })
   }, [dispatch])
 
+  const handlePermissionModeChange = useCallback((mode: 'default' | 'auto_approve') => {
+    fetch('/api/v1/permission/mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }).then(res => {
+      if (res.ok) dispatch({ type: 'SET_PERMISSION_MODE', mode })
+    })
+  }, [dispatch])
+
   // Render main content area based on pageMode
   const renderMainContent = () => {
     switch (pageMode) {
@@ -310,7 +333,7 @@ function App() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} />
+              <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} permissionMode={state.permissionMode} onPermissionModeChange={handlePermissionModeChange} />
             </main>
           </>
         )
@@ -321,7 +344,7 @@ function App() {
       case 'audit':
         return <PlaceholderPage icon="description" title="审计日志" description="审计日志功能开发中 (Task 10)" />
       case 'settings':
-        return <PlaceholderPage icon="settings" title="设置" description="系统设置功能开发中" />
+        return <PermissionSettings />
       case 'desktop':
         return (
           <DesktopMode
