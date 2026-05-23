@@ -1,9 +1,13 @@
 // Data: POST /api/v1/chat/stream (sends user message)
 import { type FC, useState, useRef, useEffect, useCallback } from 'react'
+import { PermissionBanner } from './PermissionBanner'
+import type { PermissionRequestData } from '../types/api'
 
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled: boolean
+  pendingPermission?: PermissionRequestData | null
+  onPermissionRespond?: (requestId: string, action: 'allow' | 'allow_session' | 'deny') => void
 }
 
 const MAX_CHARS = 4000
@@ -18,7 +22,7 @@ const COMMANDS = [
   { cmd: '/clear', label: '清空对话', message: '清空对话' },
 ]
 
-export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
+export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermission, onPermissionRespond }) => {
   const [text, setText] = useState('')
   const [showCommands, setShowCommands] = useState(false)
   const [filteredCommands, setFilteredCommands] = useState(COMMANDS)
@@ -74,6 +78,9 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
 
   const charColor = text.length > MAX_CHARS * 0.9 ? 'var(--ops-status-warn)' : 'var(--ops-fg-muted)'
 
+  const isDisabledByPermission = !!pendingPermission && pendingPermission.status === 'pending'
+  const effectiveDisabled = disabled || isDisabledByPermission
+
   return (
     <div
       style={{
@@ -83,6 +90,10 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
         position: 'relative',
       }}
     >
+      {/* Permission banner — appears above input when pending */}
+      {pendingPermission && pendingPermission.status === 'pending' && onPermissionRespond && (
+        <PermissionBanner permission={pendingPermission} onRespond={onPermissionRespond} />
+      )}
       {/* Command palette dropdown */}
       {showCommands && (
         <div
@@ -146,8 +157,8 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
           onKeyDown={handleKeyDown}
-          placeholder="描述你的运维诉求，例如：看看 /var 还剩多少空间"
-          disabled={disabled}
+          placeholder={isDisabledByPermission ? "等待确认操作..." : "描述你的运维诉求，例如：看看 /var 还剩多少空间"}
+          disabled={effectiveDisabled}
           rows={1}
           style={{
             flex: 1,
@@ -169,7 +180,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
           </span>
           <button
             onClick={handleSend}
-            disabled={disabled || !text.trim()}
+            disabled={effectiveDisabled || !text.trim()}
             style={{
               width: 26,
               height: 26,
@@ -178,9 +189,9 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled }) => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: text.trim() && !disabled ? 'pointer' : 'not-allowed',
-              background: text.trim() && !disabled ? 'var(--ops-fg-primary)' : 'var(--ops-border-default)',
-              opacity: text.trim() && !disabled ? 1 : 0.5,
+              cursor: text.trim() && !effectiveDisabled ? 'pointer' : 'not-allowed',
+              background: text.trim() && !effectiveDisabled ? 'var(--ops-fg-primary)' : 'var(--ops-border-default)',
+              opacity: text.trim() && !effectiveDisabled ? 1 : 0.5,
             }}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--ops-bg-canvas)' }}>

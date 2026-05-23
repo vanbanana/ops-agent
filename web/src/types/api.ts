@@ -15,6 +15,7 @@ export type SSEEventType =
   | 'done'
   | 'agent_role'
   | 'verifier_result'
+  | 'permission_request'
 
 export interface SSEStartData {
   trace_id: string
@@ -76,6 +77,27 @@ export interface SSEDoneData {
   status: string
 }
 
+// Permission request SSE event data
+export interface SSEPermissionRequestData {
+  request_id: string
+  tool: string
+  command: string
+  risk_level: 'low' | 'medium' | 'high'
+  description: string
+  expires_at: string
+}
+
+// Permission request stored in state
+export interface PermissionRequestData {
+  request_id: string
+  tool: string
+  command: string
+  risk_level: 'low' | 'medium' | 'high'
+  description: string
+  expires_at: string
+  status: 'pending' | 'allowed' | 'denied' | 'expired'
+}
+
 // Health endpoint types
 // Data: GET /health
 export interface HealthResponse {
@@ -107,6 +129,7 @@ export interface ChatMessage {
   reasoning?: string          // accumulated reasoning/thinking content from LLM
   isBlocked?: boolean
   error?: SSEErrorData
+  permissionRequest?: PermissionRequestData
 }
 
 export interface ToolCallBlock {

@@ -158,6 +158,15 @@ function App() {
         : `✗ 验证未通过 — ${data.reason}${data.missing_info?.length ? '\n缺失: ' + data.missing_info.join(', ') : ''}`
       dispatch({ type: 'ADD_AGENT_MESSAGE', message: { id: `ma-vr-${Date.now()}`, role: 'verifier', content, timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }), round: data.iteration } })
     },
+    onPermissionRequest: (data) => {
+      const sessionId = streamingForSessionRef.current
+      if (!sessionId) return
+      dispatch({
+        type: 'SET_PERMISSION_REQUEST',
+        sessionId,
+        data: { ...data, status: 'pending' },
+      })
+    },
     onConnectionError: (error) => {
       const sessionId = streamingForSessionRef.current || sessionIdRef.current
       dispatch({ type: 'SET_STREAMING', streaming: false })
@@ -254,6 +263,11 @@ function App() {
     setPageMode(mode === 'desktop' ? 'desktop' : 'agent')
   }, [])
 
+  const handlePermissionRespond = useCallback((_requestId: string, action: 'allow' | 'allow_session' | 'deny') => {
+    const status = action === 'deny' ? 'denied' as const : 'allowed' as const
+    dispatch({ type: 'UPDATE_PERMISSION_STATUS', status })
+  }, [dispatch])
+
   // Render main content area based on pageMode
   const renderMainContent = () => {
     switch (pageMode) {
@@ -296,7 +310,7 @@ function App() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              <ChatInput onSend={handleSend} disabled={state.isStreaming} />
+              <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} />
             </main>
           </>
         )

@@ -15,6 +15,7 @@ import type {
   SSEDoneData,
   SSEAgentRoleData,
   SSEVerifierResultData,
+  SSEPermissionRequestData,
 } from '../types/api'
 
 export type SSEEventHandler = {
@@ -32,6 +33,7 @@ export type SSEEventHandler = {
   onDone?: (data: SSEDoneData) => void
   onAgentRole?: (data: SSEAgentRoleData) => void
   onVerifierResult?: (data: SSEVerifierResultData) => void
+  onPermissionRequest?: (data: SSEPermissionRequestData) => void
   onConnectionError?: (error: Error) => void
 }
 
@@ -179,6 +181,9 @@ function dispatchEvent(
       break
     case 'verifier_result':
       handlers.onVerifierResult?.(data as SSEVerifierResultData)
+      break
+    case 'permission_request':
+      handlers.onPermissionRequest?.(data as SSEPermissionRequestData)
       break
   }
 }

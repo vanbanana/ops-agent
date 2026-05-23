@@ -10,6 +10,7 @@ import (
 
 	"ops-agent/internal/agent/prompt"
 	"ops-agent/internal/llm"
+	"ops-agent/internal/permission"
 	"ops-agent/internal/safety"
 	"ops-agent/internal/tools"
 )
@@ -29,12 +30,13 @@ type AgentConfig struct {
 
 // Agent orchestrates the tool-use loop.
 type Agent struct {
-	llm      LLMClient
-	registry tools.ToolRegistry
-	multi    *MultiAgent
-	judge    *ComplexityJudge
-	cfg      AgentConfig
-	audit    AuditWriter
+	llm        LLMClient
+	registry   tools.ToolRegistry
+	multi      *MultiAgent
+	judge      *ComplexityJudge
+	cfg        AgentConfig
+	audit      AuditWriter
+	permission *permission.Service
 }
 
 // AuditWriter interface for dependency injection (nil-safe).
@@ -56,13 +58,14 @@ type AuditEntry struct {
 }
 
 // NewAgent creates a new Agent instance.
-func NewAgent(llm LLMClient, reg tools.ToolRegistry, cfg AgentConfig) *Agent {
+func NewAgent(llm LLMClient, reg tools.ToolRegistry, cfg AgentConfig, permSvc *permission.Service) *Agent {
 	return &Agent{
-		llm:      llm,
-		registry: reg,
-		multi:    NewMultiAgent(llm, reg, cfg),
-		judge:    NewComplexityJudge(nil),
-		cfg:      cfg,
+		llm:        llm,
+		registry:   reg,
+		multi:      NewMultiAgent(llm, reg, cfg),
+		judge:      NewComplexityJudge(nil),
+		cfg:        cfg,
+		permission: permSvc,
 	}
 }
 
@@ -293,7 +296,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			wg.Wait()
 		}
 
-		// Execute write tools sequentially (need security check + ordering)
+		// Execute write tools sequentially (need security check + ordering + permission)
 		for _, idx := range writeTools {
 			tc := toolCalls[idx]
 			args := parseToolArgs(tc.Function.Arguments)
@@ -312,6 +315,37 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			if securityResult != "PASSED" {
 				result = tools.Result{Error: "BLOCKED: " + securityResult}
 			} else {
+				// Permission check: block until user confirms
+				if a.permission != nil {
+					permReq := permission.Request{
+						SessionID:   sessionID,
+						ToolName:    tc.Function.Name,
+						Command:     tc.Function.Arguments,
+						RiskLevel:   classifyRisk(tc.Function.Name, args),
+						Description: tc.Function.Name + ": " + truncateStr(tc.Function.Arguments, 80),
+					}
+					permitted, _ := a.permission.RequestPermission(ctx, permReq, func(req permission.Request) {
+						out <- Event{Type: "permission_request", Data: map[string]any{
+							"request_id":  req.ID,
+							"tool":        req.ToolName,
+							"command":     req.Command,
+							"risk_level":  req.RiskLevel,
+							"description": req.Description,
+							"expires_at":  req.ExpiresAt,
+						}}
+					})
+					if !permitted {
+						result = tools.Result{Error: "用户拒绝执行此操作"}
+						elapsed := time.Since(start).Milliseconds()
+						out <- Event{Type: "execute_done", Data: map[string]any{
+							"tool": tc.Function.Name, "status": "denied",
+							"result_preview": "用户拒绝执行此操作", "elapsed_ms": elapsed,
+						}}
+						content := "Permission denied by user"
+						readResults[idx] = toolExecResult{index: idx, tc: tc, result: result, content: content, secResult: securityResult}
+						continue
+					}
+				}
 				result = a.registry.Dispatch(ctx, tc.Function.Name, args)
 			}
 			elapsed := time.Since(start).Milliseconds()
@@ -398,4 +432,25 @@ func truncateStr(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// classifyRisk assigns a risk level based on tool name and arguments.
+func classifyRisk(toolName string, args map[string]any) string {
+	switch toolName {
+	case "kill_process":
+		return "high"
+	case "service_control":
+		if action, _ := args["action"].(string); action == "stop" {
+			return "high"
+		}
+		return "medium"
+	case "delete_file":
+		return "high"
+	case "truncate_log_file", "vacuum_journal", "logrotate_now":
+		return "medium"
+	case "bash":
+		return "medium"
+	default:
+		return "low"
+	}
 }

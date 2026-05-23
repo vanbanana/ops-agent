@@ -48,7 +48,7 @@ func main() {
 
 	agentInstance := agent.NewAgent(llmClient, registry, agent.AgentConfig{
 		Model: cfg.LLMModel,
-	})
+	}, nil) // CLI mode: no permission service (auto-approve)
 
 	sessionID := fmt.Sprintf("sess_%d", time.Now().UnixNano())
 

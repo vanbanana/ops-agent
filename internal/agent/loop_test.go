@@ -108,7 +108,7 @@ func (r *mockRegistry) Dispatch(_ context.Context, _ string, _ map[string]any) t
 func TestLoopMaxRoundsAbort(t *testing.T) {
 	llm := &mockLLMClientAlwaysToolCalls{}
 	reg := &mockRegistry{}
-	agent := NewAgent(llm, reg, AgentConfig{Model: "test"})
+	agent := NewAgent(llm, reg, AgentConfig{Model: "test"}, nil)
 
 	ctx := context.Background()
 	events := agent.RunStreamWithMode(ctx, "sess-test", "看磁盘", ModeSingle, nil)
@@ -166,7 +166,7 @@ func TestLoopToolThenTextCompletion(t *testing.T) {
 		},
 	}
 	reg := &mockRegistry{}
-	agent := NewAgent(llm, reg, AgentConfig{Model: "test"})
+	agent := NewAgent(llm, reg, AgentConfig{Model: "test"}, nil)
 
 	ctx := context.Background()
 	events := agent.RunStreamWithMode(ctx, "sess-test", "看磁盘", ModeSingle, nil)
@@ -208,7 +208,7 @@ func TestLoopToolThenTextCompletion(t *testing.T) {
 func TestLoopLLMNetworkError(t *testing.T) {
 	llm := &mockLLMClientNetworkError{}
 	reg := &mockRegistry{}
-	agent := NewAgent(llm, reg, AgentConfig{Model: "test"})
+	agent := NewAgent(llm, reg, AgentConfig{Model: "test"}, nil)
 
 	ctx := context.Background()
 	events := agent.RunStreamWithMode(ctx, "sess-test", "看磁盘", ModeSingle, nil)
@@ -268,7 +268,7 @@ func TestLoopToolOutputTruncation(t *testing.T) {
 		},
 	}
 
-	agent := NewAgent(llm, reg, AgentConfig{Model: "test"})
+	agent := NewAgent(llm, reg, AgentConfig{Model: "test"}, nil)
 	ctx := context.Background()
 	events := agent.RunStreamWithMode(ctx, "sess-test", "看磁盘", ModeSingle, nil)
 

@@ -12,6 +12,7 @@ import type {
   ReasoningStep,
   SSEExecuteDoneData,
   AgentChatMessage,
+  PermissionRequestData,
 } from '../types/api'
 
 const STORAGE_KEY = 'ops_agent_chat_v2'
@@ -46,6 +47,7 @@ export interface ChatState {
   multiAgentRound: number
   multiAgentActiveRole: string | null
   multiAgentStatus: string
+  pendingPermission: PermissionRequestData | null
 }
 
 // Helper: get messages for a session (never undefined)
@@ -75,6 +77,8 @@ type Action =
   | { type: 'ADD_AGENT_MESSAGE'; message: AgentChatMessage }
   | { type: 'SET_MULTI_AGENT_STATUS'; role: string | null; round: number; status: string }
   | { type: 'CLEAR_MULTI_AGENT' }
+  | { type: 'SET_PERMISSION_REQUEST'; sessionId: string; data: PermissionRequestData }
+  | { type: 'UPDATE_PERMISSION_STATUS'; status: 'allowed' | 'denied' | 'expired' }
 
 const initialResources: ResourceData = {
   disk: [],
@@ -98,6 +102,7 @@ const initialState: ChatState = {
   multiAgentRound: 0,
   multiAgentActiveRole: null,
   multiAgentStatus: '',
+  pendingPermission: null,
 }
 
 // Helper to update messages for a specific session
@@ -214,6 +219,14 @@ function chatReducer(state: ChatState, action: Action): ChatState {
       return { ...state, multiAgentActiveRole: action.role, multiAgentRound: action.round, multiAgentStatus: action.status }
     case 'CLEAR_MULTI_AGENT':
       return { ...state, multiAgentMessages: [], multiAgentMode: false, multiAgentRound: 0, multiAgentActiveRole: null, multiAgentStatus: '' }
+
+    case 'SET_PERMISSION_REQUEST':
+      return { ...state, pendingPermission: action.data }
+
+    case 'UPDATE_PERMISSION_STATUS':
+      if (!state.pendingPermission) return state
+      // Once resolved, clear it after brief display
+      return { ...state, pendingPermission: null }
 
     default:
       return state
