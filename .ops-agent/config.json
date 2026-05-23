@@ -1,0 +1,40 @@
+{
+  "llm": {
+    "primary": {
+      "provider": "xiaomi",
+      "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+      "model": "mimo-v2.5-pro"
+    },
+    "fallback": []
+  },
+  "agents": {
+    "default": "build",
+    "multi_agent": {
+      "enabled": true,
+      "complexity_judge_timeout_seconds": 10,
+      "max_iterations": 3,
+      "executor_max_steps": 8,
+      "parallel_execution": true
+    }
+  },
+  "skills": {
+    "auto_discover": true,
+    "paths": [".ops-agent/skills"]
+  },
+  "mcp": {
+    "servers": {}
+  },
+  "session": {
+    "max_history_messages": 20,
+    "compaction": {
+      "auto": true,
+      "threshold_ratio": 0.8,
+      "preserve_recent_turns": 2,
+      "prune_tool_output_after_tokens": 40000
+    }
+  },
+  "safety": {
+    "injection_detection": true,
+    "command_validation": true
+  }
+}

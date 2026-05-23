@@ -1,0 +1,40 @@
+# Binaries
+server
+server-loong64
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.local
+
+# SQLite data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Test logs (keep directory, ignore log files)
+test-logs/**/*.log
+test-logs/**/*.jsonl
+!test-logs/.gitkeep
+
+# Build artifacts
+ops-agent-server

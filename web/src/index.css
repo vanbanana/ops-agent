@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/* ============================
+   Design Tokens — 对标阿里云 Workbench 精确色阶
+   数据来源: workbench-styles 提取 (2026-05-23)
+   灰度: --gray100 #171717 → --gray30 #CCCCCC
+   字号基准: 12px, 行高 22px
+   ============================ */
+:root {
+  /* 背景 — 精确匹配阿里云 Workbench */
+  --ops-bg-canvas: #171717;       /* --gray100, 最深背景(终端/编辑器) */
+  --ops-bg-surface: #212121;      /* --gray95, 主面板(顶栏/会话列表) */
+  --ops-bg-elevated: #2B2B2B;     /* --gray90, 侧栏/状态栏/Tab激活/hover */
+  --ops-bg-input: #171717;        /* 输入框同最深底 */
+  --ops-bg-sidebar: #2B2B2B;      /* 左侧Nav栏、底栏 — 跟阿里云一样用亮灰 */
+
+  /* 边框 */
+  --ops-border-subtle: #2B2B2B;   /* 极淡，仅区分层级 */
+  --ops-border-default: #3D3D3D;  /* --gray80, 常规边框 */
+  --ops-border-strong: #4F4F4F;   /* --gray70, 聚焦/强调 */
+
+  /* 文字 — 阿里云用 #CCC 做主文本，#9E9E9E 次级 */
+  --ops-fg-primary: #CCCCCC;      /* --gray30 */
+  --ops-fg-secondary: #9E9E9E;    /* --gray50 area */
+  --ops-fg-muted: #707070;        /* --gray60 */
+
+  /* 功能色 — 从 workbench CSS 变量提取 */
+  --ops-status-ok: #009431;       /* workbench green */
+  --ops-status-warn: #F5A214;     /* --yellow60 */
+  --ops-status-danger: #E01C22;   /* --red60 */
+  --ops-status-info: #3794FF;     /* 页面实际高频蓝 */
+  --ops-status-neutral: #808080;  /* --gray55 */
+
+  /* 字体 — 精确匹配 */
+  --ops-font-mono: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace;
+  --ops-font-ui: "Helvetica Neue", Helvetica, Arial, "PingFang SC", sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--ops-font-ui);
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--ops-fg-primary);
+  background: var(--ops-bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar — 6px wide, 4px radius (from --workbench-scrollbar-*) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 121, 121, 0.7);
+}
+
+::selection {
+  background: rgba(55, 148, 255, 0.25);
+}
+
+/* Allotment split sash */
+.sash-container .sash {
+  background: var(--ops-border-subtle) !important;
+}
+.sash-container .sash:hover {
+  background: var(--ops-border-default) !important;
+}
+
+/* Keyframe animations for chat components */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(0.6); opacity: 0.4; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
