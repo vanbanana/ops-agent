@@ -424,7 +424,7 @@ func summarizeToolCalls(calls []ToolCall) []map[string]any {
 }
 
 func statusFromResult(r tools.Result) string {
-	if r.Error != "" {
+	if r.Error != "" && r.Summary == "" {
 		return "error"
 	}
 	return "ok"
