@@ -77,6 +77,7 @@ func (c *httpLLMClient) Chat(ctx context.Context, req ChatRequest) (*ChatRespons
 func (c *httpLLMClient) ChatStream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
 	req.Model = c.config.Model
 	req.Stream = true
+	req.StreamOptions = &StreamOptions{IncludeUsage: true}
 
 	body, err := json.Marshal(req)
 	if err != nil {

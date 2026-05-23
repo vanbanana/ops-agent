@@ -26,11 +26,17 @@ type StreamChunk struct {
 
 // ChatRequest represents an OpenAI-compatible chat completion request.
 type ChatRequest struct {
-	Model          string    `json:"model"`
-	Messages       []Message `json:"messages"`
-	Tools          []ToolDef `json:"tools,omitempty"`
-	Stream         bool      `json:"stream"`
-	EnableThinking bool      `json:"enable_thinking,omitempty"`
+	Model          string             `json:"model"`
+	Messages       []Message          `json:"messages"`
+	Tools          []ToolDef          `json:"tools,omitempty"`
+	Stream         bool               `json:"stream"`
+	StreamOptions  *StreamOptions     `json:"stream_options,omitempty"`
+	EnableThinking bool               `json:"enable_thinking,omitempty"`
+}
+
+// StreamOptions configures streaming behavior.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // Message represents a chat message.

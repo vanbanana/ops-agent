@@ -145,12 +145,20 @@ function App() {
       dispatch({ type: 'UPDATE_LAST_AGENT', sessionId, updater: (m) => ({ ...m, content: data.reply }) })
       dispatch({ type: 'SET_THINKING', sessionId, data: { status: 'done' } })
       dispatch({ type: 'ADD_REASONING_STEP', step: { phase: 'output', timestamp: new Date().toLocaleTimeString('en-GB', { hour12: false }), data: { tokens_used: data.tokens_used, elapsed_ms: data.elapsed_ms }, status: 'done' } })
-      // Calculate context usage percentage (prompt tokens / context budget)
+      // Calculate context usage percentage
       const tokensUsed = data.tokens_used as { prompt?: number; completion?: number } | number | undefined
-      if (tokensUsed && typeof tokensUsed === 'object' && tokensUsed.prompt) {
-        // Context budget: 80% of (context_window - max_output) ≈ 19660 for mimo-v2.5-pro (32768-8192)*0.8
+      if (tokensUsed && typeof tokensUsed === 'object' && tokensUsed.prompt && tokensUsed.prompt > 0) {
+        // API returned real usage
         const contextBudget = 19660
         const percent = Math.min(100, Math.round((tokensUsed.prompt / contextBudget) * 100))
+        dispatch({ type: 'SET_CONTEXT_USAGE', percent })
+      } else {
+        // Fallback: estimate from message text length (4 chars per token approx)
+        const allMessages = getSessionMessages(state, sessionId)
+        const totalChars = allMessages.reduce((sum, m) => sum + m.content.length + (m.reasoning?.length || 0), 0)
+        const estimatedTokens = Math.round(totalChars / 4)
+        const contextBudget = 19660
+        const percent = Math.min(100, Math.round((estimatedTokens / contextBudget) * 100))
         dispatch({ type: 'SET_CONTEXT_USAGE', percent })
       }
     },
