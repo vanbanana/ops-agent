@@ -292,12 +292,31 @@ function App() {
 
   const handleSelectSession = useCallback((id: string) => {
     if (id === sessionIdRef.current) return
-    // Don't abort — let background SSE connections continue writing to their sessions
     dispatch({ type: 'SET_STREAMING', streaming: false })
     dispatch({ type: 'SET_ACTIVE_SESSION', id })
     dispatch({ type: 'CLEAR_MULTI_AGENT' })
     sessionIdRef.current = id
-  }, [dispatch])
+
+    // Load messages from backend if not already in local state
+    const existing = state.messagesBySession[id]
+    if (!existing || existing.length === 0) {
+      fetch(`/api/v1/sessions/${id}/messages`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.data && Array.isArray(data.data)) {
+            for (const msg of data.data) {
+              dispatch({ type: 'ADD_MESSAGE', sessionId: id, message: {
+                id: `db-${Date.now()}-${Math.random()}`,
+                role: msg.role === 'assistant' ? 'agent' : msg.role,
+                content: msg.content || '',
+                timestamp: msg.created_at || new Date().toISOString(),
+              }})
+            }
+          }
+        })
+        .catch(() => {})
+    }
+  }, [dispatch, state.messagesBySession])
 
   const handleDeleteSession = useCallback((id: string) => {
     // Delete from backend SQLite
