@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+// SessionStoreInterface defines the common interface for session storage.
+type SessionStoreInterface interface {
+	GetOrCreate(sessionID string)
+	AppendMessage(sessionID string, msg Message)
+	GetRecentMessages(sessionID string, maxMessages int) []Message
+	ListSessions() []Session
+	DeleteSession(sessionID string) error
+}
+
 // Message represents a chat message in a session.
 type Message struct {
 	Role       string `json:"role"`
@@ -38,12 +47,12 @@ func NewSessionStore() *SessionStore {
 }
 
 // GetOrCreate retrieves a session or creates a new one.
-func (s *SessionStore) GetOrCreate(sessionID string) *Session {
+func (s *SessionStore) GetOrCreate(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if sess, ok := s.sessions[sessionID]; ok {
-		return sess
+	if _, ok := s.sessions[sessionID]; ok {
+		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -55,7 +64,6 @@ func (s *SessionStore) GetOrCreate(sessionID string) *Session {
 		UpdatedAt: now,
 	}
 	s.sessions[sessionID] = sess
-	return sess
 }
 
 // AppendMessage adds a message to a session.
@@ -99,7 +107,6 @@ func (s *SessionStore) ListSessions() []Session {
 
 	result := make([]Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
-		// Return without messages for list view
 		result = append(result, Session{
 			ID:        sess.ID,
 			Title:     sess.Title,
@@ -108,4 +115,12 @@ func (s *SessionStore) ListSessions() []Session {
 		})
 	}
 	return result
+}
+
+// DeleteSession removes a session and its messages.
+func (s *SessionStore) DeleteSession(sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.sessions, sessionID)
+	return nil
 }

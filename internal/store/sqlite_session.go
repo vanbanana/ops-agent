@@ -74,3 +74,13 @@ func (s *SQLiteSessionStore) ListSessions() []Session {
 	}
 	return sessions
 }
+
+// DeleteSession removes a session and its messages from SQLite.
+func (s *SQLiteSessionStore) DeleteSession(sessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`DELETE FROM sessions WHERE id = ?`, sessionID)
+	return err
+}

@@ -53,16 +53,20 @@ func main() {
 	tools.RegisterAllProbes(registry)
 	tools.RegisterWriteTools(registry)
 
-	// Initialize session store (in-memory, fast for development)
-	// SQLite persistence available via store.NewSQLiteSessionStore for production
-	sessions := store.NewSessionStore()
-
-	// Initialize SQLite database (used for audit logs)
+	// Initialize SQLite database (used for audit logs + session persistence)
 	db, err := store.OpenDB(cfg.DBPath)
 	if err != nil {
 		log.Printf("⚠️  SQLite unavailable (%v), audit logs disabled", err)
 	} else {
 		defer db.Close()
+	}
+
+	// Initialize session store (SQLite persistent)
+	var sessions store.SessionStoreInterface
+	if db != nil {
+		sessions = store.NewSQLiteSessionStore(db)
+	} else {
+		sessions = store.NewSessionStore() // fallback to in-memory if DB unavailable
 	}
 
 	// Initialize audit writer
@@ -308,6 +312,32 @@ func main() {
 
 	// File system API (Task 15 — desktop file manager)
 	r.Get("/api/v1/fs/list", api.HandleFSList)
+
+	// Sessions API (persistent)
+	r.Get("/api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
+		list := sessions.ListSessions()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": list})
+	})
+
+	r.Delete("/api/v1/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if err := sessions.DeleteSession(id); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]any{"code": 500, "error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "ok"}})
+	})
+
+	r.Get("/api/v1/sessions/{id}/messages", func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		msgs := sessions.GetRecentMessages(id, 100)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": msgs})
+	})
 	r.Get("/api/v1/fs/stat", api.HandleFSStat)
 	r.Post("/api/v1/fs/mkdir", api.HandleFSMkdir)
 	r.Post("/api/v1/fs/rename", api.HandleFSRename)

@@ -110,14 +110,12 @@ func TestSessionStoreConcurrency(t *testing.T) {
 
 func TestGetOrCreateIdempotent(t *testing.T) {
 	store := NewSessionStore()
-	s1 := store.GetOrCreate("sess_idem")
+	store.GetOrCreate("sess_idem")
 	store.AppendMessage("sess_idem", Message{Role: "user", Content: "hello"})
-	s2 := store.GetOrCreate("sess_idem")
+	store.GetOrCreate("sess_idem") // should not reset
 
-	if s1.ID != s2.ID {
-		t.Fatal("GetOrCreate should return same session")
-	}
-	if len(s2.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(s2.Messages))
+	msgs := store.GetRecentMessages("sess_idem", 10)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message after idempotent GetOrCreate, got %d", len(msgs))
 	}
 }
