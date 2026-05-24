@@ -97,6 +97,35 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(120 * time.Second))
 
+	// Rate limiting: 60 req/min per token/IP
+	rateLimiter := api.NewRateLimiter(60, 1*time.Minute)
+	r.Use(rateLimiter.Middleware)
+
+	// Auth middleware: enforce JWT only in production (non-default secret)
+	isDevMode := cfg.JWTSecret == "dev-only-insecure-key" || cfg.JWTSecret == "dev-only-not-for-production" || strings.HasPrefix(cfg.JWTSecret, "dev-")
+	if !isDevMode {
+		// Protected: all /api/v1/* except login require JWT
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				path := req.URL.Path
+				// Skip auth for: login, health, version, static assets
+				if path == "/api/v1/auth/login" || path == "/health" || path == "/health/deep" || path == "/version" {
+					next.ServeHTTP(w, req)
+					return
+				}
+				// Apply JWT middleware for all other API routes
+				if strings.HasPrefix(path, "/api/") {
+					authService.JWTMiddleware(next).ServeHTTP(w, req)
+					return
+				}
+				next.ServeHTTP(w, req)
+			})
+		})
+		fmt.Println("   Auth: JWT enforced (production mode)")
+	} else {
+		fmt.Println("   Auth: DISABLED (dev mode, set JWT_SECRET to enable)")
+	}
+
 	// Public routes (no auth)
 	r.Post("/api/v1/auth/login", authService.HandleLogin)
 
