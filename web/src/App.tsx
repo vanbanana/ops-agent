@@ -43,6 +43,28 @@ function App() {
           if (data?.data?.mode) dispatch({ type: 'SET_PERMISSION_MODE', mode: data.data.mode })
         })
         .catch(() => {})
+
+      // Load sessions from backend (SQLite persistent)
+      fetch('/api/v1/sessions')
+        .then(res => res.json())
+        .then(data => {
+          if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
+            const sessions = data.data.map((s: { id: string; title: string; created_at: string; updated_at: string }) => ({
+              id: s.id,
+              title: s.title || '新对话',
+              last_message: '',
+              created_at: s.created_at,
+              updated_at: s.updated_at,
+            }))
+            dispatch({ type: 'SET_SESSIONS', sessions })
+            // If no active session, select the first one
+            if (!sessionIdRef.current && sessions.length > 0) {
+              dispatch({ type: 'SET_ACTIVE_SESSION', id: sessions[0].id })
+              sessionIdRef.current = sessions[0].id
+            }
+          }
+        })
+        .catch(() => {})
     }
   }, [connected, dispatch])
 
@@ -278,8 +300,10 @@ function App() {
   }, [dispatch])
 
   const handleDeleteSession = useCallback((id: string) => {
+    // Delete from backend SQLite
+    fetch(`/api/v1/sessions/${id}`, { method: 'DELETE' }).catch(() => {})
+    // Delete from frontend state
     dispatch({ type: 'DELETE_SESSION', sessionId: id })
-    // If we deleted the current session, update ref
     if (sessionIdRef.current === id) {
       const remaining = state.sessions.filter(s => s.id !== id)
       sessionIdRef.current = remaining.length > 0 ? remaining[0].id : null
