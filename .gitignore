@@ -24,6 +24,7 @@ Thumbs.db
 # Environment
 .env
 *.local
+providers.json
 
 # SQLite data
 data/
@@ -39,3 +40,23 @@ test-logs/**/*.jsonl
 # Build artifacts
 ops-agent-server
 ops-cli
+
+# Deploy build artifacts
+deploy/ops-agent-deploy/ops-agent
+deploy/ops-agent-deploy/web/assets/
+deploy/ops-agent-deploy-loong64/ops-agent
+deploy/ops-agent-deploy-loong64/rtunnel
+deploy/ops-agent-deploy-loong64/web/assets/
+deploy/*.tar.gz
+deploy/ops-agent-linux-amd64
+deploy/rtunnel-linux-amd64
+
+# Skill / agent working files
+.ops-agent/
+
+# Docs binary files
+docs/*.docx
+
+# Frontend
+web/node_modules/
+web/dist/

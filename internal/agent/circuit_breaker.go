@@ -1,9 +1,13 @@
 package agent
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
+
+// ErrCircuitOpen is returned when the circuit breaker is open (failing fast).
+var ErrCircuitOpen = errors.New("circuit breaker open: LLM API unavailable, retry after cooldown")
 
 // CircuitState represents the state of a circuit breaker.
 type CircuitState int

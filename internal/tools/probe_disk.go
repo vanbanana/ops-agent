@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type probeDisk struct{}
@@ -53,8 +54,16 @@ func (p *probeLargeFiles) Execute(ctx context.Context, args map[string]any) (Res
 	path := getStringArg(args, "path", "/var/log")
 	minSize := getStringArg(args, "min_size", "100M")
 
-	out, err := exec.CommandContext(ctx, "find", path, "-type", "f", "-size", "+"+minSize).Output()
+	// Use -maxdepth 4 to prevent find from running indefinitely on deep/circular paths
+	// Use a 15-second timeout context to fail fast instead of blocking the loop
+	findCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(findCtx, "find", path, "-maxdepth", "4", "-type", "f", "-size", "+"+minSize).Output()
 	if err != nil {
+		if findCtx.Err() != nil {
+			return Result{Summary: "搜索超时（路径过深），建议缩小搜索范围或指定具体子目录"}, nil
+		}
 		// find returns exit 1 for permission denied on some dirs, that's ok
 		if len(out) > 0 {
 			return Result{Summary: strings.TrimSpace(string(out))}, nil

@@ -7,9 +7,10 @@ interface AppHeaderProps {
   mode: 'chat' | 'desktop'
   onModeChange: (mode: 'chat' | 'desktop') => void
   connected: boolean
+  onLogout?: () => void
 }
 
-export const AppHeader: FC<AppHeaderProps> = ({ health, mode, onModeChange, connected }) => {
+export const AppHeader: FC<AppHeaderProps> = ({ health, mode, onModeChange, connected, onLogout }) => {
 
   return (
     <header
@@ -52,7 +53,7 @@ export const AppHeader: FC<AppHeaderProps> = ({ health, mode, onModeChange, conn
         <HeaderBtn icon="notifications" />
         <HeaderBtn icon="splitscreen" />
         <HeaderBtn icon="fullscreen" />
-        <HeaderBtn icon="more_horiz" />
+        {onLogout && <HeaderBtn icon="logout" onClick={onLogout} />}
       </div>
 
       {/* Second row — tabs + info (36px) */}
@@ -85,11 +86,6 @@ export const AppHeader: FC<AppHeaderProps> = ({ health, mode, onModeChange, conn
         </span>
 
         <div style={{ flex: 1 }} />
-
-        {/* Model name — right side */}
-        <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 11, color: 'var(--ops-fg-muted)' }}>
-          deepseek/v4-flash
-        </span>
       </div>
     </header>
   )
@@ -119,8 +115,9 @@ const TabButton: FC<{ label: string; icon: string; active: boolean; onClick: () 
   </button>
 )
 
-const HeaderBtn: FC<{ icon: string }> = ({ icon }) => (
+const HeaderBtn: FC<{ icon: string; onClick?: () => void }> = ({ icon, onClick }) => (
   <button
+    onClick={onClick}
     style={{
       width: 28,
       height: 28,

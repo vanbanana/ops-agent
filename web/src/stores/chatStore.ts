@@ -3,6 +3,7 @@
 // state.activeSessionId selects which session to display.
 // SSE writes directly to the target session regardless of what's displayed.
 import { useReducer, useCallback, useEffect } from 'react'
+import { authFetch } from '../lib/auth'
 import type {
   ChatMessage,
   ThinkingData,
@@ -48,8 +49,13 @@ export interface ChatState {
   multiAgentActiveRole: string | null
   multiAgentStatus: string
   pendingPermission: PermissionRequestData | null
-  permissionMode: 'default' | 'auto_approve'
+  permissionMode: 'default' | 'auto_approve' | 'plan'
   contextUsage: number  // 0-100 percent of context window used
+  // --- Agent loop hardening state ---
+  circuitOpen: { retry_after_sec: number; message: string } | null
+  pendingPlan: { planId: string; planText: string; steps: string[] } | null
+  lastWarning: { tool: string; message: string } | null
+  outputPersisted: { path: string; original_size: number; tool: string }[]
 }
 
 // Helper: get messages for a session (never undefined)
@@ -82,8 +88,12 @@ type Action =
   | { type: 'DELETE_SESSION'; sessionId: string }
   | { type: 'SET_PERMISSION_REQUEST'; sessionId: string; data: PermissionRequestData }
   | { type: 'UPDATE_PERMISSION_STATUS'; status: 'allowed' | 'denied' | 'expired' }
-  | { type: 'SET_PERMISSION_MODE'; mode: 'default' | 'auto_approve' }
+  | { type: 'SET_PERMISSION_MODE'; mode: 'default' | 'auto_approve' | 'plan' }
   | { type: 'SET_CONTEXT_USAGE'; percent: number }
+  | { type: 'SET_CIRCUIT_OPEN'; data: { retry_after_sec: number; message: string } | null }
+  | { type: 'SET_PENDING_PLAN'; data: { planId: string; planText: string; steps: string[] } | null }
+  | { type: 'SET_WARNING'; data: { tool: string; message: string } | null }
+  | { type: 'ADD_OUTPUT_PERSISTED'; data: { path: string; original_size: number; tool: string } }
 
 const initialResources: ResourceData = {
   disk: [],
@@ -110,6 +120,10 @@ const initialState: ChatState = {
   pendingPermission: null,
   permissionMode: 'default',
   contextUsage: 0,
+  circuitOpen: null,
+  pendingPlan: null,
+  lastWarning: null,
+  outputPersisted: [],
 }
 
 // Helper to update messages for a specific session
@@ -248,8 +262,30 @@ function chatReducer(state: ChatState, action: Action): ChatState {
     case 'SET_PERMISSION_MODE':
       return { ...state, permissionMode: action.mode }
 
-    case 'SET_CONTEXT_USAGE':
+    case 'SET_CIRCUIT_OPEN':
+      return { ...state, circuitOpen: action.data }
+
+    case 'SET_PENDING_PLAN':
+      return { ...state, pendingPlan: action.data }
+
+    case 'SET_WARNING':
+      return { ...state, lastWarning: action.data }
+
+    case 'ADD_OUTPUT_PERSISTED':
+      return { ...state, outputPersisted: [...state.outputPersisted, action.data] }
+
+    case 'SET_CONTEXT_USAGE': {
+      // Persist to backend via configs API (survives cache clearing)
+      const sessionId = state.activeSessionId
+      if (sessionId && action.percent > 0) {
+        authFetch('/api/v1/configs', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [`ctx_usage_${sessionId}`]: String(action.percent) }),
+        }).catch(() => {})
+      }
       return { ...state, contextUsage: action.percent }
+    }
 
     default:
       return state

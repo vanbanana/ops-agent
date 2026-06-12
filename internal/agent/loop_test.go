@@ -102,6 +102,10 @@ func (r *mockRegistry) Definitions() []tools.ToolDefinition                     
 func (r *mockRegistry) Dispatch(_ context.Context, _ string, _ map[string]any) tools.Result {
 	return tools.Result{Data: "/ 50%\n/var 30%", Summary: "/ 50%\n/var 30%"}
 }
+func (r *mockRegistry) Enable(_ string)          {}
+func (r *mockRegistry) Disable(_ string)         {}
+func (r *mockRegistry) IsDisabled(_ string) bool { return false }
+func (r *mockRegistry) AllStatus() []tools.ToolStatus { return nil }
 
 // --- Task 9.7: mock LLM 永远返回 tool_calls → 10 轮后中止 ---
 
@@ -293,6 +297,10 @@ func (r *mockRegistryLargeOutput) Definitions() []tools.ToolDefinition     { ret
 func (r *mockRegistryLargeOutput) Dispatch(_ context.Context, _ string, _ map[string]any) tools.Result {
 	return tools.Result{Data: r.output, Summary: r.output}
 }
+func (r *mockRegistryLargeOutput) Enable(_ string)          {}
+func (r *mockRegistryLargeOutput) Disable(_ string)         {}
+func (r *mockRegistryLargeOutput) IsDisabled(_ string) bool { return false }
+func (r *mockRegistryLargeOutput) AllStatus() []tools.ToolStatus { return nil }
 
 // --- Helper ---
 

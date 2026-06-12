@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -31,7 +32,7 @@ type loginAttempts struct {
 }
 
 const maxLoginAttempts = 5
-const lockDuration = 15 * time.Minute
+const lockDuration = 3 * time.Minute
 
 // NewAuthService creates an auth service.
 func NewAuthService(cfg AuthConfig) *AuthService {
@@ -154,4 +155,47 @@ func extractIP(r *http.Request) string {
 		return strings.Split(forwarded, ",")[0]
 	}
 	return strings.Split(r.RemoteAddr, ":")[0]
+}
+
+// HandleUnlockIP handles DELETE /api/v1/auth/lockout/{ip} -- admin unlocks an IP.
+// Only accessible from localhost for security.
+func (a *AuthService) HandleUnlockIP(w http.ResponseWriter, r *http.Request) {
+	ip := chi.URLParam(r, "ip")
+	requesterIP := extractIP(r)
+	if requesterIP != "127.0.0.1" && requesterIP != "::1" && requesterIP != "localhost" {
+		writeJSON(w, 403, map[string]any{"code": 403, "error": "only localhost can unlock"})
+		return
+	}
+	a.mu.Lock()
+	delete(a.failedLogins, ip)
+	a.mu.Unlock()
+	writeJSON(w, 200, map[string]any{"code": 0, "message": "IP unlocked"})
+}
+
+// HandleListLockouts handles GET /api/v1/auth/lockouts -- admin lists locked IPs.
+func (a *AuthService) HandleListLockouts(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	type lockoutInfo struct {
+		IP        string `json:"ip"`
+		Attempts  int    `json:"attempts"`
+		LockedAt  string `json:"locked_at,omitempty"`
+		Remaining int    `json:"remaining_seconds,omitempty"`
+	}
+	var result []lockoutInfo
+	for ip, att := range a.failedLogins {
+		info := lockoutInfo{IP: ip, Attempts: att.count}
+		if att.count >= maxLoginAttempts {
+			info.LockedAt = att.lockedAt.Format(time.RFC3339)
+			remaining := lockDuration - time.Since(att.lockedAt)
+			if remaining > 0 {
+				info.Remaining = int(remaining.Seconds())
+			}
+		}
+		result = append(result, info)
+	}
+	if result == nil {
+		result = []lockoutInfo{}
+	}
+	writeJSON(w, 200, map[string]any{"code": 0, "data": result})
 }

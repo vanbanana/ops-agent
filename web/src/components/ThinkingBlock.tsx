@@ -5,8 +5,6 @@ interface ThinkingBlockProps {
   thinking: ThinkingData
 }
 
-const AUTO_COLLAPSE_LENGTH = 200 // 保留备用
-
 export const ThinkingBlock: FC<ThinkingBlockProps> = ({ thinking }) => {
   const isThinking = thinking.status === 'thinking'
   const [manualToggle, setManualToggle] = useState<boolean | null>(null) // null = auto mode

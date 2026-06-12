@@ -1,0 +1,14 @@
+[
+  {
+    "id": "deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash",
+    "provider": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "api_key": "SET_VIA_ENV_OR_WEB_UI",
+    "model_id": "deepseek-v4-flash",
+    "context_window": 1000000,
+    "max_output": 8192,
+    "is_active": true,
+    "can_reason": true
+  }
+]

@@ -64,7 +64,12 @@ func LoadDotEnv(path string) {
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 && os.Getenv(parts[0]) == "" {
-			os.Setenv(parts[0], parts[1])
+			val := strings.TrimSpace(parts[1])
+			if (strings.HasPrefix(val, `"`) && strings.HasSuffix(val, `"`)) ||
+				(strings.HasPrefix(val, `'`) && strings.HasSuffix(val, `'`)) {
+				val = val[1 : len(val)-1]
+			}
+			os.Setenv(parts[0], val)
 		}
 	}
 }

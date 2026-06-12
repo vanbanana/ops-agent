@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 // Data: None (local terminal, future WebSocket to backend)
 // Layout: bottom drawer with split pane support (horizontal/vertical) + fullscreen mode
 import { type FC, useState, useRef, useCallback, useEffect } from 'react'
@@ -85,32 +86,96 @@ const XTermInstance: FC<{ paneId: string; isActive: boolean; onFocus: (id: strin
     termRef.current = terminal
     fitRef.current = fitAddon
 
-    // Local echo (placeholder until WebSocket backend)
+    // Local echo replaced with real backend exec
     let line = ''
-    terminal.writeln('\x1b[2m# OPS·AGENT Terminal — WebSocket 未接入\x1b[0m')
-    terminal.writeln('\x1b[2m# 输入命令将经过安全校验器\x1b[0m')
-    terminal.write('\x1b[38;5;70m❯\x1b[0m ')
+    terminal.writeln('\x1b[38;5;70m# OPS·AGENT Terminal\x1b[0m')
+    terminal.writeln('\x1b[2m# 命令将通过安全校验后在服务器执行\x1b[0m')
+    terminal.write('\x1b[38;5;70m>\x1b[0m ')
 
     terminal.onKey(({ key, domEvent }) => {
       if (domEvent.key === 'Enter') {
         terminal.write('\r\n')
-        if (line.trim()) {
-          terminal.writeln(`\x1b[2m[local] ${line}\x1b[0m`)
+        const cmd = line.trim()
+        if (cmd) {
+          // Execute via backend API
+          authFetch('/api/v1/terminal/exec', {
+            method: 'POST',
+            body: JSON.stringify({ command: cmd, timeout: 30 }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data?.data?.blocked) {
+                terminal.writeln(`\x1b[31m[blocked] ${data.data.error}\x1b[0m`)
+              } else if (data?.data?.error) {
+                terminal.writeln(`\x1b[31m${data.data.error}\x1b[0m`)
+              } else if (data?.data?.output) {
+                const lines = data.data.output.split('\n')
+                for (const l of lines) {
+                  terminal.writeln(l)
+                }
+              }
+              if (data?.data?.exit_code && data.data.exit_code !== 0) {
+                terminal.writeln(`\x1b[2m[exit ${data.data.exit_code}]\x1b[0m`)
+              }
+              terminal.write('\x1b[38;5;70m>\x1b[0m ')
+            })
+            .catch(err => {
+              terminal.writeln(`\x1b[31m[error] ${err}\x1b[0m`)
+              terminal.write('\x1b[38;5;70m>\x1b[0m ')
+            })
+        } else {
+          terminal.write('\x1b[38;5;70m>\x1b[0m ')
         }
         line = ''
-        terminal.write('\x1b[38;5;70m❯\x1b[0m ')
       } else if (domEvent.key === 'Backspace') {
         if (line.length > 0) {
           line = line.slice(0, -1)
           terminal.write('\b \b')
         }
+      } else if (domEvent.key === 'Tab') {
+        domEvent.preventDefault()
       } else if (key.length === 1 && !domEvent.ctrlKey && !domEvent.altKey && !domEvent.metaKey) {
         line += key
         terminal.write(key)
       }
     })
 
+    // Listen for external command execution (from quick commands panel)
+    const handleExternalExec = (e: Event) => {
+      const cmd = (e as CustomEvent).detail?.command
+      if (!cmd || !terminal) return
+      terminal.writeln('\x1b[2m' + '\u2500'.repeat(40) + '\x1b[0m')
+      terminal.writeln(`\x1b[38;5;70m>\x1b[0m \x1b[33m${cmd}\x1b[0m`)
+      authFetch('/api/v1/terminal/exec', {
+        method: 'POST',
+        body: JSON.stringify({ command: cmd, timeout: 30 }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data?.data?.blocked) {
+            terminal.writeln(`\x1b[31m[blocked] ${data.data.error}\x1b[0m`)
+          } else if (data?.data?.error) {
+            terminal.writeln(`\x1b[31m${data.data.error}\x1b[0m`)
+          } else if (data?.data?.output) {
+            const lines = data.data.output.split('\n')
+            for (const l of lines) {
+              terminal.writeln(l)
+            }
+          }
+          if (data?.data?.exit_code && data.data.exit_code !== 0) {
+            terminal.writeln(`\x1b[2m[exit ${data.data.exit_code}]\x1b[0m`)
+          }
+          terminal.write('\x1b[38;5;70m>\x1b[0m ')
+        })
+        .catch(err => {
+          terminal.writeln(`\x1b[31m[error] ${err}\x1b[0m`)
+          terminal.write('\x1b[38;5;70m>\x1b[0m ')
+        })
+    }
+    window.addEventListener('terminal:exec', handleExternalExec)
+
     return () => {
+      window.removeEventListener('terminal:exec', handleExternalExec)
       terminal.dispose()
       termRef.current = null
       fitRef.current = null

@@ -1,3 +1,4 @@
+import { authFetch } from '../../../lib/auth'
 // Data: GET /api/v1/fs/list?path=... (文件列表)
 import { type FC, useState, useEffect, useCallback, useRef } from 'react'
 
@@ -42,7 +43,7 @@ export const FileManagerApp: FC<FileManagerAppProps> = ({ connected }) => {
     setError(null)
     setSelectedNames(new Set())
     try {
-      const res = await fetch(`/api/v1/fs/list?path=${encodeURIComponent(path)}`)
+      const res = await authFetch(`/api/v1/fs/list?path=${encodeURIComponent(path)}`)
       if (!res.ok) {
         const text = await res.text()
         setError(`请求失败: ${res.status} ${text.slice(0, 100)}`)
@@ -139,7 +140,6 @@ export const FileManagerApp: FC<FileManagerAppProps> = ({ connected }) => {
       for (const item of clipboard.items) {
         await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: `${clipboard.sourcePath}/${item}`, destination: `${currentPath}/${item}` }),
         })
       }
@@ -155,9 +155,8 @@ export const FileManagerApp: FC<FileManagerAppProps> = ({ connected }) => {
     if (!confirmed) return
     try {
       for (const name of selectedNames) {
-        await fetch('/api/v1/fs/delete', {
+        await authFetch('/api/v1/fs/delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: `${currentPath}/${name}` }),
         })
       }
@@ -179,9 +178,8 @@ export const FileManagerApp: FC<FileManagerAppProps> = ({ connected }) => {
       return
     }
     try {
-      await fetch('/api/v1/fs/rename', {
+      await authFetch('/api/v1/fs/rename', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: `${currentPath}/${renaming}`, destination: `${currentPath}/${renameValue}` }),
       })
       fetchDir(currentPath)
@@ -194,9 +192,8 @@ export const FileManagerApp: FC<FileManagerAppProps> = ({ connected }) => {
     const name = window.prompt('新建文件夹名称:')
     if (!name) return
     try {
-      await fetch('/api/v1/fs/mkdir', {
+      await authFetch('/api/v1/fs/mkdir', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: `${currentPath}/${name}` }),
       })
       fetchDir(currentPath)

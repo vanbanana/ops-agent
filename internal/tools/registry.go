@@ -13,19 +13,34 @@ type ToolRegistry interface {
 	List() []Tool
 	Definitions() []ToolDefinition
 	Dispatch(ctx context.Context, name string, args map[string]any) Result
+	Enable(name string)
+	Disable(name string)
+	IsDisabled(name string) bool
+	AllStatus() []ToolStatus
+}
+
+// ToolStatus represents a tool's registration info for the management API.
+type ToolStatus struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Type        ToolType `json:"type"`
+	Enabled     bool     `json:"enabled"`
+	Source      string   `json:"source"` // "builtin" or "mcp"
 }
 
 // registry is the default ToolRegistry implementation.
 type registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
-	order []string
+	mu       sync.RWMutex
+	tools    map[string]Tool
+	order    []string
+	disabled map[string]bool // disabled tools are registered but not exposed to LLM
 }
 
 // NewRegistry creates a new ToolRegistry.
 func NewRegistry() ToolRegistry {
 	return &registry{
-		tools: make(map[string]Tool),
+		tools:    make(map[string]Tool),
+		disabled: make(map[string]bool),
 	}
 }
 
@@ -62,6 +77,9 @@ func (r *registry) Definitions() []ToolDefinition {
 	defer r.mu.RUnlock()
 	defs := make([]ToolDefinition, 0, len(r.order))
 	for _, name := range r.order {
+		if r.disabled[name] {
+			continue
+		}
 		t := r.tools[name]
 		defs = append(defs, ToolDefinition{
 			Type: "function",
@@ -78,15 +96,60 @@ func (r *registry) Definitions() []ToolDefinition {
 func (r *registry) Dispatch(ctx context.Context, name string, args map[string]any) Result {
 	r.mu.RLock()
 	t, ok := r.tools[name]
+	isDisabled := r.disabled[name]
 	r.mu.RUnlock()
 
 	if !ok {
 		return Result{Error: fmt.Sprintf("unknown tool: %s", name)}
 	}
+	if isDisabled {
+		return Result{Error: fmt.Sprintf("tool %s is disabled", name)}
+	}
 
 	result, err := t.Execute(ctx, args)
 	if err != nil {
 		return Result{Error: err.Error(), Summary: "tool execution failed: " + err.Error()}
+	}
+	return result
+}
+
+func (r *registry) Enable(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.disabled, name)
+}
+
+func (r *registry) Disable(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tools[name]; ok {
+		r.disabled[name] = true
+	}
+}
+
+func (r *registry) IsDisabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.disabled[name]
+}
+
+func (r *registry) AllStatus() []ToolStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]ToolStatus, 0, len(r.order))
+	for _, name := range r.order {
+		t := r.tools[name]
+		source := "builtin"
+		if t.Type() == ToolExternal {
+			source = "mcp"
+		}
+		result = append(result, ToolStatus{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Type:        t.Type(),
+			Enabled:     !r.disabled[name],
+			Source:      source,
+		})
 	}
 	return result
 }

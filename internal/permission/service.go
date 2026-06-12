@@ -13,6 +13,7 @@ type Mode string
 const (
 	ModeDefault     Mode = "default"      // Write ops require confirmation
 	ModeAutoApprove Mode = "auto_approve" // All ops auto-approved
+	ModePlan        Mode = "plan"         // Plan mode: write ops silently rejected, read-only allowed
 )
 
 // Request holds a permission request sent to the frontend.
@@ -30,6 +31,12 @@ type Request struct {
 // The loop passes its own out-channel wrapped in this closure.
 type NotifyFunc func(req Request)
 
+// pendingEntry holds a pending permission request with its metadata.
+type pendingEntry struct {
+	Ch      chan bool
+	Request Request
+}
+
 // cachedPermission stores a session-level grant.
 type cachedPermission struct {
 	SessionID string
@@ -41,7 +48,7 @@ type cachedPermission struct {
 type Service struct {
 	mu              sync.RWMutex
 	mode            Mode
-	pendingRequests sync.Map // map[requestID] chan bool
+	pendingRequests sync.Map // map[requestID] *pendingEntry
 	sessionCache    []cachedPermission
 	timeout         time.Duration
 }
@@ -98,7 +105,7 @@ func (s *Service) RequestPermission(ctx context.Context, req Request, notify Not
 
 	// Create response channel
 	respCh := make(chan bool, 1)
-	s.pendingRequests.Store(req.ID, respCh)
+	s.pendingRequests.Store(req.ID, &pendingEntry{Ch: respCh, Request: req})
 	defer s.pendingRequests.Delete(req.ID)
 
 	// Notify frontend via SSE
@@ -125,13 +132,16 @@ func (s *Service) Respond(requestID string, action string) error {
 		return fmt.Errorf("no pending request with ID %q", requestID)
 	}
 
-	respCh := val.(chan bool)
+	entry := val.(*pendingEntry)
+	respCh := entry.Ch
 
 	switch action {
 	case "allow":
 		respCh <- true
 	case "allow_session":
 		respCh <- true
+		// Cache for future requests in same session (skip re-confirmation)
+		s.GrantForSession(entry.Request.SessionID, entry.Request.ToolName, entry.Request.Command)
 	case "deny":
 		respCh <- false
 	default:

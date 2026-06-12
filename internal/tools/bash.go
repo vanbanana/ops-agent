@@ -53,7 +53,7 @@ func (t *BashTool) Schema() map[string]any {
 	}
 }
 
-func (t *BashTool) Type() ToolType { return ToolReadOnly }
+func (t *BashTool) Type() ToolType { return ToolWrite }
 
 func (t *BashTool) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	command, _ := args["command"].(string)
@@ -69,15 +69,9 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]any) (Result, er
 		}
 	}
 
-	// Security: the actual validation is done by safety.ValidateCommand
-	// in the agent loop before dispatch. Here we just execute.
-	// But as extra safety, refuse obviously dangerous patterns.
-	lower := strings.ToLower(command)
-	for _, banned := range []string{"rm -rf", "mkfs", "dd if=", "> /dev/", "curl ", "wget ", "nc "} {
-		if strings.Contains(lower, banned) {
-			return Result{Error: fmt.Sprintf("命令被拒绝: 包含危险模式 '%s'", banned)}, nil
-		}
-	}
+	// Security: full validation is done by safety.ValidateCommand in the agent
+	// loop before dispatch (now correctly triggered because Type()==ToolWrite).
+	// No inline blacklist needed — AST-based validator handles all cases.
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()

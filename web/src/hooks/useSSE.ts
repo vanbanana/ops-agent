@@ -1,6 +1,7 @@
 // Data: POST /api/v1/chat/stream
 // Supports multiple concurrent SSE connections — each send() creates an independent stream
 import { useCallback, useRef } from 'react'
+import { authFetch } from '../lib/auth'
 import type {
   SSEEventType,
   SSEStartData,
@@ -16,6 +17,10 @@ import type {
   SSEAgentRoleData,
   SSEVerifierResultData,
   SSEPermissionRequestData,
+  SSECircuitOpenData,
+  SSEOutputPersistedData,
+  SSEPlanReadyData,
+  SSEWarningData,
 } from '../types/api'
 
 export type SSEEventHandler = {
@@ -34,6 +39,10 @@ export type SSEEventHandler = {
   onAgentRole?: (data: SSEAgentRoleData) => void
   onVerifierResult?: (data: SSEVerifierResultData) => void
   onPermissionRequest?: (data: SSEPermissionRequestData) => void
+  onCircuitOpen?: (data: SSECircuitOpenData) => void
+  onOutputPersisted?: (data: SSEOutputPersistedData) => void
+  onPlanReady?: (data: SSEPlanReadyData) => void
+  onWarning?: (data: SSEWarningData) => void
   onConnectionError?: (error: Error) => void
 }
 
@@ -60,9 +69,8 @@ export function useSSE(handlers: SSEEventHandler) {
       const body: Record<string, string> = { message }
       if (sessionId) body.session_id = sessionId
 
-      const response = await fetch('/api/v1/chat/stream', {
+      const response = await authFetch('/api/v1/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: controller.signal,
       })
@@ -184,6 +192,18 @@ function dispatchEvent(
       break
     case 'permission_request':
       handlers.onPermissionRequest?.(data as SSEPermissionRequestData)
+      break
+    case 'circuit_open':
+      handlers.onCircuitOpen?.(data as SSECircuitOpenData)
+      break
+    case 'output_persisted':
+      handlers.onOutputPersisted?.(data as SSEOutputPersistedData)
+      break
+    case 'plan_ready':
+      handlers.onPlanReady?.(data as SSEPlanReadyData)
+      break
+    case 'warning':
+      handlers.onWarning?.(data as SSEWarningData)
       break
   }
 }

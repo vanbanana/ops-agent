@@ -1,12 +1,15 @@
 import { type FC, useState } from 'react'
 import { PermissionSettings } from './PermissionSettings'
+import { ModelSettings } from './ModelSettings'
+import { ToolsSettings } from './ToolsSettings'
 
-type SettingsTab = 'permission' | 'general' | 'llm' | 'about'
+type SettingsTab = 'permission' | 'general' | 'llm' | 'tools' | 'about'
 
 const TABS: { id: SettingsTab; icon: string; label: string }[] = [
   { id: 'permission', icon: 'shield', label: '权限' },
-  { id: 'general', icon: 'tune', label: '通用' },
   { id: 'llm', icon: 'smart_toy', label: '模型' },
+  { id: 'tools', icon: 'extension', label: '工具' },
+  { id: 'general', icon: 'tune', label: '通用' },
   { id: 'about', icon: 'info', label: '关于' },
 ]
 
@@ -71,8 +74,9 @@ export const SettingsPage: FC = () => {
       {/* Settings content */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         {activeTab === 'permission' && <PermissionSettings />}
+        {activeTab === 'llm' && <ModelSettings />}
+        {activeTab === 'tools' && <ToolsSettings />}
         {activeTab === 'general' && <SettingsPlaceholder icon="tune" title="通用设置" description="主题、语言、快捷键等通用配置" />}
-        {activeTab === 'llm' && <SettingsPlaceholder icon="smart_toy" title="模型设置" description="LLM 模型选择、API 配置、Token 限制等" />}
         {activeTab === 'about' && <SettingsPlaceholder icon="info" title="关于" description="版本信息、开源协议、更新检查" />}
       </div>
     </div>

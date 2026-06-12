@@ -1,3 +1,4 @@
+import { authFetch } from '../../../lib/auth'
 // Data: GET /api/v1/safety/scan
 import { type FC, useState, useCallback } from 'react'
 
@@ -13,7 +14,7 @@ export const SecurityApp: FC<SecurityAppProps> = ({ connected }) => {
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch(`/api/v1/safety/scan?cmd=${encodeURIComponent(command)}`)
+      const res = await authFetch(`/api/v1/safety/scan?cmd=${encodeURIComponent(command)}`)
       if (res.ok) {
         const json = await res.json()
         setResult({ safe: json.safe ?? json.allowed ?? false, reason: json.reason ?? json.message ?? '未知' })

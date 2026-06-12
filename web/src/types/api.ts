@@ -16,6 +16,10 @@ export type SSEEventType =
   | 'agent_role'
   | 'verifier_result'
   | 'permission_request'
+  | 'circuit_open'
+  | 'output_persisted'
+  | 'plan_ready'
+  | 'warning'
 
 export interface SSEStartData {
   trace_id: string
@@ -199,4 +203,43 @@ export interface AgentChatMessage {
   round: number
   tokensUsed?: number
   toolName?: string
+}
+
+
+// --- New SSE event types for agent loop hardening ---
+
+/** Circuit breaker opened — LLM API is unavailable */
+export interface SSECircuitOpenData {
+  retry_after_sec: number
+  message: string
+}
+
+/** Large tool output was persisted to disk */
+export interface SSEOutputPersistedData {
+  path: string
+  original_size: number
+  tool: string
+}
+
+/** Plan mode: plan is ready for user approval */
+export interface SSEPlanReadyData {
+  plan_id: string
+  plan_text: string
+  steps: string[]
+}
+
+/** Destructive command warning (non-blocking, informational) */
+export interface SSEWarningData {
+  tool: string
+  message: string
+}
+
+/** Extended execute event data with warning field */
+export interface SSEExecuteDataWithWarning extends SSEExecuteData {
+  warning?: string
+}
+
+/** Extended permission request with warning */
+export interface SSEPermissionRequestWithWarning extends SSEPermissionRequestData {
+  warning?: string
 }

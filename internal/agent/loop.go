@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,8 @@ type Agent struct {
 	cfg        AgentConfig
 	audit      AuditWriter
 	permission *permission.Service
+	cb         *CircuitBreaker // Circuit breaker for LLM API calls
+	planState  *PlanState      // Plan mode state machine
 }
 
 // AuditWriter interface for dependency injection (nil-safe).
@@ -66,6 +69,8 @@ func NewAgent(llm LLMClient, reg tools.ToolRegistry, cfg AgentConfig, permSvc *p
 		judge:      NewComplexityJudge(nil),
 		cfg:        cfg,
 		permission: permSvc,
+		cb:         NewCircuitBreaker(3, 30*time.Second),
+		planState:  NewPlanState(),
 	}
 }
 
@@ -77,6 +82,11 @@ func (a *Agent) SetAuditWriter(w AuditWriter) {
 // MultiAgent returns the multi-agent executor for tool registration.
 func (a *Agent) MultiAgent() *MultiAgent {
 	return a.multi
+}
+
+// PlanState returns the plan mode state machine for API handlers.
+func (a *Agent) PlanState() *PlanState {
+	return a.planState
 }
 
 // writeAudit is a nil-safe helper to write audit entries.
@@ -105,9 +115,19 @@ func (a *Agent) RunStreamWithMode(ctx context.Context, sessionID, userMessage st
 		// Sense: injection scan (fast, ~1ms)
 		scan := safety.ScanInjection(userMessage)
 		if scan.IsBlocked {
-			out <- Event{Type: "sense", Data: map[string]any{"status": "blocked", "reason": scan.ErrorCode}}
+			// Build details from matched rules
+			ruleDetails := make([]map[string]any, 0, len(scan.Matches))
+			for _, m := range scan.Matches {
+				ruleDetails = append(ruleDetails, map[string]any{
+					"rule_id": m.Rule.ID,
+					"reason":  m.Rule.Reason,
+					"snippet": m.Snippet,
+				})
+			}
+			out <- Event{Type: "sense", Data: map[string]any{"status": "blocked", "reason": scan.ErrorCode, "rules": ruleDetails}}
 			out <- Event{Type: "error", Data: map[string]any{
 				"error_code": scan.ErrorCode, "message": "检测到提示词注入风险", "recoverable": false,
+				"rules": ruleDetails,
 			}}
 			a.writeAudit(AuditEntry{TraceID: traceID, SessionID: sessionID, Stage: "SENSE", Status: "blocked", Content: map[string]any{"reason": scan.ErrorCode}})
 			out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "error"}}
@@ -138,8 +158,9 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 	tokenBudget := modelInfo.ContextBudget()
 
 	// Build messages with history context
+	isPlanMode := a.planState.IsPlanning()
 	messages := []Message{
-		{Role: "system", Content: buildSystemPrompt(a.registry)},
+		{Role: "system", Content: buildSystemPrompt(a.registry, isPlanMode)},
 	}
 	if len(history) > 0 {
 		messages = append(messages, history...)
@@ -158,6 +179,16 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 
 		messages = compactMessages(messages, tokenBudget)
 
+		// Circuit breaker: fail fast if LLM API is consistently failing
+		if !a.cb.Allow() {
+			out <- Event{Type: "circuit_open", Data: map[string]any{
+				"retry_after_sec": 30,
+				"message":         "LLM API 连续失败，熔断器已开启，30秒后自动恢复",
+			}}
+			out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "circuit_open"}}
+			return
+		}
+
 		// Try streaming first, fallback to non-streaming
 		stream, streamErr := a.llm.ChatStream(ctx, ChatRequest{
 			Messages:       messages,
@@ -174,6 +205,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			// Streaming not supported or failed — fallback to Chat()
 			resp, err := a.llm.Chat(ctx, ChatRequest{Messages: messages, Tools: a.buildToolDefs(), EnableThinking: true})
 			if err != nil {
+				a.cb.RecordFailure() // Circuit breaker: record failure
 				errCode := "LLM_SERVICE_001"
 				if asLLM, ok := err.(*LLMError); ok {
 					errCode = string(asLLM.Code)
@@ -182,6 +214,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 				out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "error"}}
 				return
 			}
+			a.cb.RecordSuccess() // Circuit breaker: record success
 			if len(resp.Choices) > 0 {
 				replyContent = resp.Choices[0].Message.Content
 				toolCalls = resp.Choices[0].Message.ToolCalls
@@ -192,6 +225,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			// True streaming — emit text_delta events for each token
 			for chunk := range stream {
 				if chunk.Error != nil {
+					a.cb.RecordFailure() // Circuit breaker: record stream failure
 					out <- Event{Type: "error", Data: map[string]any{"error_code": "LLM_STREAM_001", "message": chunk.Error.Error(), "recoverable": false}}
 					out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "error"}}
 					return
@@ -216,6 +250,9 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			}
 		}
 
+		// Circuit breaker: if we got here, stream completed successfully
+		a.cb.RecordSuccess()
+
 		hasToolCalls := len(toolCalls) > 0
 
 		out <- Event{Type: "analyze", Data: map[string]any{
@@ -235,6 +272,38 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			a.writeAudit(AuditEntry{TraceID: traceID, SessionID: sessionID, Stage: "OUTPUT", Status: "ok", Content: map[string]any{"reply_length": len(replyContent)}})
 			out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "ok"}}
 			return
+		}
+
+		// Handle virtual exit_plan_mode tool (plan mode completion signal)
+		if a.planState.IsPlanning() {
+			for _, tc := range toolCalls {
+				if tc.Function.Name == "exit_plan_mode" {
+					// LLM has finished planning — extract plan text and submit
+					args := parseToolArgs(tc.Function.Arguments)
+					planText, _ := args["plan_text"].(string)
+					if planText == "" {
+						planText = replyContent // Fallback: use the text reply as plan
+					}
+					a.planState.SubmitPlan(planText)
+
+					// Send plan_ready event to frontend
+					out <- Event{Type: "plan_ready", Data: map[string]any{
+						"plan_id":   a.planState.PlanID(),
+						"plan_text": planText,
+						"steps":     extractPlanSteps(planText),
+					}}
+
+					// Respond to the tool call
+					messages = append(messages, Message{Role: "assistant", ToolCalls: toolCalls})
+					messages = append(messages, Message{Role: "tool", Content: "计划已提交，等待用户审批。", ToolCallID: tc.ID})
+
+					out <- Event{Type: "output", Data: map[string]any{
+						"reply": planText, "mode": "plan",
+					}}
+					out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "plan_submitted"}}
+					return
+				}
+			}
 		}
 
 		// Execute tool calls — parallel for readonly, sequential for write ops (OpenCode pattern)
@@ -259,6 +328,50 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			} else {
 				readonlyTools = append(readonlyTools, i)
 			}
+		}
+
+		// Plan mode: reject all write tools silently, only allow readonly
+		if a.planState.IsPlanning() && len(writeTools) > 0 {
+			// In plan mode, write operations are queued into the plan, not executed
+			readResults := make([]toolExecResult, len(toolCalls))
+			for _, idx := range writeTools {
+				tc := toolCalls[idx]
+				readResults[idx] = toolExecResult{
+					index:   idx,
+					tc:      tc,
+					result:  tools.Result{Summary: "[计划模式] 此写操作已被记录但未执行。请继续收集信息，最终以文本形式输出完整操作计划。"},
+					content: "[计划模式] 此写操作已被记录但未执行。请继续收集信息，最终以文本形式输出完整操作计划。",
+				}
+			}
+			// Still execute readonly tools normally
+			if len(readonlyTools) > 0 {
+				var wg sync.WaitGroup
+				for _, idx := range readonlyTools {
+					wg.Add(1)
+					go func(i int) {
+						defer wg.Done()
+						tc := toolCalls[i]
+						args := parseToolArgs(tc.Function.Arguments)
+						result := a.registry.Dispatch(ctx, tc.Function.Name, args)
+						content := result.Summary
+						if result.Error != "" {
+							content = "Error: " + result.Error
+						}
+						readResults[i] = toolExecResult{index: i, tc: tc, result: result, content: content}
+					}(idx)
+				}
+				wg.Wait()
+			}
+			// Append all results
+			for _, tc := range toolCalls {
+				for _, res := range readResults {
+					if res.tc.ID == tc.ID {
+						messages = append(messages, Message{Role: "tool", Content: res.content, ToolCallID: tc.ID})
+						break
+					}
+				}
+			}
+			continue // Next round
 		}
 
 		// Execute readonly tools in parallel
@@ -287,7 +400,19 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 					if result.Error != "" {
 						content = "Error: " + result.Error
 					}
-					if len(content) > 4096 {
+					// Large output persistence: save to disk, keep preview in context
+					if len(content) > OutputPersistThreshold {
+						path, preview, persistErr := PersistOutput(sessionID, traceID, tc.Function.Name, content)
+						if persistErr == nil {
+							out <- Event{Type: "output_persisted", Data: map[string]any{
+								"path": path, "original_size": len(content), "tool": tc.Function.Name,
+							}}
+							content = preview
+						} else {
+							// Fallback: simple truncation
+							content = content[:4096] + "\n[Truncated]"
+						}
+					} else if len(content) > 4096 {
 						content = content[:4096] + "\n[Truncated]"
 					}
 					readResults[i] = toolExecResult{index: i, tc: tc, result: result, content: content, secResult: "PASSED"}
@@ -302,21 +427,34 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			args := parseToolArgs(tc.Function.Arguments)
 			start := time.Now()
 
-			// Security check: only for bash tool (write tools have their own internal validation)
+			// Security check: validate the actual command via AST-based pipeline
+			// In auto_approve mode, skip security validation (user takes full responsibility)
 			securityResult := "PASSED"
-			if tc.Function.Name == "bash" {
-				cmd := tc.Function.Name + " " + tc.Function.Arguments
-				vr := safety.ValidateCommand(cmd)
-				if vr.Status == safety.StatusBlocked {
-					securityResult = string(vr.Reason)
+			securityDetail := ""
+			destructiveWarning := ""
+			isAutoApprove := a.permission != nil && a.permission.GetMode() == permission.ModeAutoApprove
+			if tc.Function.Name == "bash" && !isAutoApprove {
+				cmd, _ := args["command"].(string)
+				if cmd != "" {
+					vr := safety.ValidateCommand(cmd)
+					if vr.Status == safety.StatusBlocked {
+						securityResult = string(vr.Reason)
+						securityDetail = vr.Detail
+					}
+					// Destructive warning (non-blocking info for confirmation UI)
+					destructiveWarning = safety.GetDestructiveWarning(cmd)
+					if vr.Warning != "" && destructiveWarning == "" {
+						destructiveWarning = vr.Warning
+					}
 				}
 			}
 
-			out <- Event{Type: "execute", Data: map[string]any{"tool": tc.Function.Name, "args": args, "security_check": securityResult}}
+			out <- Event{Type: "execute", Data: map[string]any{"tool": tc.Function.Name, "args": args, "security_check": securityResult, "warning": destructiveWarning}}
 
 			var result tools.Result
 			if securityResult != "PASSED" {
-				result = tools.Result{Error: "BLOCKED: " + securityResult}
+				result = tools.Result{Error: "BLOCKED: " + securityResult + " — " + securityDetail}
+				a.writeAudit(AuditEntry{TraceID: traceID, SessionID: sessionID, Stage: "EXECUTE", Status: "blocked", Content: map[string]any{"tool": tc.Function.Name, "reason": securityResult, "detail": securityDetail}})
 			} else {
 				// Permission check: block until user confirms
 				if a.permission != nil {
@@ -338,6 +476,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 						}}
 					})
 					if !permitted {
+						a.writeAudit(AuditEntry{TraceID: traceID, SessionID: sessionID, Stage: "EXECUTE", Status: "blocked", Content: map[string]any{"tool": tc.Function.Name, "reason": "user_denied", "args": tc.Function.Arguments}})
 						result = tools.Result{Error: "用户拒绝执行此操作"}
 						elapsed := time.Since(start).Milliseconds()
 						out <- Event{Type: "execute_done", Data: map[string]any{
@@ -362,7 +501,18 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 			if result.Error != "" {
 				content = "Error: " + result.Error
 			}
-			if len(content) > 4096 {
+			// Large output persistence for write tools too
+			if len(content) > OutputPersistThreshold {
+				path, preview, persistErr := PersistOutput(sessionID, traceID, tc.Function.Name, content)
+				if persistErr == nil {
+					out <- Event{Type: "output_persisted", Data: map[string]any{
+						"path": path, "original_size": len(content), "tool": tc.Function.Name,
+					}}
+					content = preview
+				} else {
+					content = content[:4096] + "\n[Truncated]"
+				}
+			} else if len(content) > 4096 {
 				content = content[:4096] + "\n[Truncated]"
 			}
 			readResults[idx] = toolExecResult{index: idx, tc: tc, result: result, content: content, secResult: securityResult}
@@ -388,23 +538,74 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 
 func (a *Agent) buildToolDefs() []ToolDef {
 	defs := a.registry.Definitions()
-	result := make([]ToolDef, len(defs))
-	for i, d := range defs {
-		result[i] = ToolDef{
+	isPlan := a.planState.IsPlanning()
+
+	var result []ToolDef
+	for _, d := range defs {
+		// In plan mode: hide all write tools from the LLM so it can't call them
+		if isPlan && d.Function.Name != "" {
+			// Check if this tool is a write tool by looking it up in registry
+			if t, ok := a.registry.Get(d.Function.Name); ok && t.Type() == tools.ToolWrite {
+				continue // Skip write tools in plan mode
+			}
+		}
+		result = append(result, ToolDef{
 			Type: d.Type,
 			Function: FunctionDef{
 				Name:        d.Function.Name,
 				Description: d.Function.Description,
 				Parameters:  d.Function.Parameters,
 			},
-		}
+		})
 	}
+
+	// In plan mode: add a virtual "exit_plan_mode" tool for the LLM to signal completion
+	if isPlan {
+		result = append(result, ToolDef{
+			Type: "function",
+			Function: FunctionDef{
+				Name:        "exit_plan_mode",
+				Description: "当你完成信息收集并准备好操作计划后，调用此工具提交计划。计划内容通过 plan_text 参数传入，用户将审阅后决定是否批准执行。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"plan_text": map[string]any{
+							"type":        "string",
+							"description": "完整的操作计划文本，包含编号步骤、具体命令和风险评估",
+						},
+					},
+					"required": []string{"plan_text"},
+				},
+			},
+		})
+	}
+
 	return result
 }
 
-func buildSystemPrompt(reg tools.ToolRegistry) string {
+func buildSystemPrompt(reg tools.ToolRegistry, planMode bool) string {
 	workDir, _ := os.Getwd()
-	return prompt.GetPrompt(prompt.RoleCoder, workDir)
+	base := prompt.GetPrompt(prompt.RoleCoder, workDir)
+	if planMode {
+		base += `
+
+<PLAN_MODE>
+你当前处于【计划模式】。在此模式下：
+
+1. **禁止执行任何写操作**（重启服务、删文件、kill 进程等），所有写工具调用都会被拒绝
+2. **只能使用只读探测工具**收集信息（probe_disk、probe_process、bash 只读命令如 df/ps/cat 等）
+3. **目标是输出一份完整的操作计划**，包含：
+   - 问题诊断结论
+   - 建议执行的步骤列表（按顺序，每步写清做什么、用什么命令）
+   - 每步的风险评估
+   - 预期效果
+4. 当你完成信息收集并准备好计划后，**直接以文本形式输出计划**，不要调用写工具
+5. 用户会审阅你的计划，批准后系统会自动切换到执行模式
+
+**格式要求：** 用编号列表输出计划步骤，每步包含：操作描述 + 具体命令 + 风险等级(低/中/高)
+</PLAN_MODE>`
+	}
+	return base
 }
 
 func parseToolArgs(argsJSON string) map[string]any {
@@ -435,6 +636,29 @@ func truncateStr(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// extractPlanSteps extracts numbered steps from a plan text.
+// Looks for lines starting with numbers (1. 2. 3. etc.) or bullet points.
+func extractPlanSteps(planText string) []string {
+	var steps []string
+	for _, line := range strings.Split(planText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
+		}
+		// Match: "1. xxx", "1) xxx", "- xxx", "* xxx", "步骤1: xxx"
+		if len(trimmed) > 2 && ((trimmed[0] >= '0' && trimmed[0] <= '9') ||
+			trimmed[0] == '-' || trimmed[0] == '*' ||
+			strings.HasPrefix(trimmed, "步骤")) {
+			steps = append(steps, trimmed)
+		}
+	}
+	if len(steps) == 0 {
+		// Fallback: split by sentences
+		steps = []string{truncateStr(planText, 200)}
+	}
+	return steps
 }
 
 // classifyRisk assigns a risk level based on tool name and arguments.

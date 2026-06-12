@@ -9,20 +9,43 @@ import { ChatInput } from './components/ChatInput'
 import { RightPanel } from './components/RightPanel'
 import { TerminalDrawer } from './components/TerminalDrawer'
 import { StatusBar } from './components/StatusBar'
-import { PlaceholderPage } from './components/PlaceholderPage'
 import { DesktopMode } from './pages/DesktopMode'
 import { SettingsPage } from './pages/SettingsPage'
+import { AuditPage } from './pages/AuditPage'
+import { LoginPage } from './pages/LoginPage'
 import { MultiAgentChat } from './components/MultiAgentChat'
 import { SuggestedPrompts } from './components/SuggestedPrompts'
+import { FileTree } from './components/FileTree'
+import { PlanApproval } from './components/PlanApproval'
+import { CircuitOpenBanner } from './components/CircuitOpenBanner'
 import { useHealth } from './hooks/useHealth'
 import { useSSE } from './hooks/useSSE'
 import { useChatStore, getSessionMessages } from './stores/chatStore'
 import { useResourcePolling } from './hooks/useResourcePolling'
 import { demoSessions, demoMessages, demoReasoning, demoResources } from './lib/demo'
+import { authFetch, getAuthToken, setAuthToken, clearAuthToken } from './lib/auth'
 
 type PageMode = 'agent' | 'terminal' | 'files' | 'audit' | 'settings' | 'desktop'
 
 function App() {
+  const [authToken, setAuthTokenState] = useState<string | null>(() => getAuthToken())
+
+  const handleLoginSuccess = useCallback((token: string) => {
+    setAuthToken(token)
+    setAuthTokenState(token)
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    clearAuthToken()
+    setAuthTokenState(null)
+  }, [])
+
+  useEffect(() => {
+    const onAuthExpired = () => setAuthTokenState(null)
+    window.addEventListener('auth:expired', onAuthExpired)
+    return () => window.removeEventListener('auth:expired', onAuthExpired)
+  }, [])
+
   const { health, loading: healthLoading, connected } = useHealth()
   const { state, dispatch, extractResources } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -30,22 +53,22 @@ function App() {
   const streamingForSessionRef = useRef<string | null>(null) // tracks which session the active SSE belongs to
   const [pageMode, setPageMode] = useState<PageMode>('agent')
   const [rightPanelVisible, setRightPanelVisible] = useState(true)
+  const [leftPanel, setLeftPanel] = useState<'sessions' | 'files'>('sessions')
 
   // Poll resource data directly from /desktop/probe/* every 30s (Task 14)
-  useResourcePolling(connected, dispatch)
+  useResourcePolling(connected, authToken, dispatch)
 
   // Load permission mode from backend on connect
   useEffect(() => {
-    if (connected) {
-      fetch('/api/v1/permission/mode')
+    if (connected && authToken) {
+      authFetch('/api/v1/permission/mode')
         .then(res => res.json())
         .then(data => {
           if (data?.data?.mode) dispatch({ type: 'SET_PERMISSION_MODE', mode: data.data.mode })
         })
         .catch(() => {})
 
-      // Load sessions from backend (SQLite persistent)
-      fetch('/api/v1/sessions')
+      authFetch('/api/v1/sessions')
         .then(res => res.json())
         .then(data => {
           if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
@@ -66,7 +89,7 @@ function App() {
         })
         .catch(() => {})
     }
-  }, [connected, dispatch])
+  }, [connected, authToken, dispatch])
 
   // Load demo data ONLY if backend confirmed unreachable (not during initial loading)
   useEffect(() => {
@@ -218,6 +241,20 @@ function App() {
         data: { ...data, status: 'pending' },
       })
     },
+    onCircuitOpen: (data) => {
+      dispatch({ type: 'SET_CIRCUIT_OPEN', data })
+      // Auto-clear after retry period
+      setTimeout(() => dispatch({ type: 'SET_CIRCUIT_OPEN', data: null }), data.retry_after_sec * 1000)
+    },
+    onOutputPersisted: (data) => {
+      dispatch({ type: 'ADD_OUTPUT_PERSISTED', data })
+    },
+    onPlanReady: (data) => {
+      dispatch({ type: 'SET_PENDING_PLAN', data: { planId: data.plan_id, planText: data.plan_text, steps: data.steps } })
+    },
+    onWarning: (data) => {
+      dispatch({ type: 'SET_WARNING', data })
+    },
     onConnectionError: (error) => {
       const sessionId = streamingForSessionRef.current || sessionIdRef.current
       dispatch({ type: 'SET_STREAMING', streaming: false })
@@ -297,10 +334,18 @@ function App() {
     dispatch({ type: 'CLEAR_MULTI_AGENT' })
     sessionIdRef.current = id
 
-    // Load messages from backend if not already in local state
+    // Restore context usage from backend
+    authFetch(`/api/v1/configs?keys=ctx_usage_${id}`)
+      .then(r => r.json())
+      .then(d => {
+        const val = d?.data?.[`ctx_usage_${id}`]
+        if (val) dispatch({ type: 'SET_CONTEXT_USAGE', percent: parseInt(val) || 0 })
+      })
+      .catch(() => {})
+
     const existing = state.messagesBySession[id]
     if (!existing || existing.length === 0) {
-      fetch(`/api/v1/sessions/${id}/messages`)
+      authFetch(`/api/v1/sessions/${id}/messages`)
         .then(res => res.json())
         .then(data => {
           if (data?.data && Array.isArray(data.data)) {
@@ -320,7 +365,7 @@ function App() {
 
   const handleDeleteSession = useCallback((id: string) => {
     // Delete from backend SQLite
-    fetch(`/api/v1/sessions/${id}`, { method: 'DELETE' }).catch(() => {})
+    authFetch(`/api/v1/sessions/${id}`, { method: 'DELETE' }).catch(() => {})
     // Delete from frontend state
     dispatch({ type: 'DELETE_SESSION', sessionId: id })
     if (sessionIdRef.current === id) {
@@ -337,8 +382,15 @@ function App() {
   }, [messages, handleSend])
 
   const handleNavigate = useCallback((page: string) => {
-    setPageMode(page as PageMode)
-  }, [])
+    if (page === 'files') {
+      // Toggle left panel to file tree (stay on agent page)
+      setLeftPanel(prev => prev === 'files' ? 'sessions' : 'files')
+      if (pageMode !== 'agent') setPageMode('agent')
+    } else {
+      setLeftPanel('sessions')
+      setPageMode(page as PageMode)
+    }
+  }, [pageMode])
 
   const handleModeChange = useCallback((mode: 'chat' | 'desktop') => {
     setPageMode(mode === 'desktop' ? 'desktop' : 'agent')
@@ -349,10 +401,9 @@ function App() {
     dispatch({ type: 'UPDATE_PERMISSION_STATUS', status })
   }, [dispatch])
 
-  const handlePermissionModeChange = useCallback((mode: 'default' | 'auto_approve') => {
-    fetch('/api/v1/permission/mode', {
+  const handlePermissionModeChange = useCallback((mode: 'default' | 'auto_approve' | 'plan') => {
+    authFetch('/api/v1/permission/mode', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     }).then(res => {
       if (res.ok) dispatch({ type: 'SET_PERMISSION_MODE', mode })
@@ -365,11 +416,12 @@ function App() {
       case 'agent':
         return (
           <>
-            <SessionList sessions={state.sessions} activeId={state.activeSessionId} onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} />
+            {leftPanel === 'sessions' && <SessionList sessions={state.sessions} activeId={state.activeSessionId} onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} />}
+            {leftPanel === 'files' && <FileTree />}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--ops-bg-canvas)', overflow: 'hidden', minWidth: 0 }}>
               <ResourceStrip resources={state.resources} />
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '16px 48px', display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720, margin: '0 auto', width: '100%', flex: messages.length === 0 ? 1 : undefined }}>
+                <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760, margin: '0 auto', width: '100%', flex: messages.length === 0 ? 1 : undefined }}>
                   {messages.length === 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 300, gap: 16 }}>
                       <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 14, fontWeight: 500, color: 'var(--ops-fg-muted)' }}>OPS·AGENT</span>
@@ -401,6 +453,30 @@ function App() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
+              {/* Circuit breaker banner */}
+              {state.circuitOpen && (
+                <CircuitOpenBanner
+                  retry_after_sec={state.circuitOpen.retry_after_sec}
+                  message={state.circuitOpen.message}
+                  onDismiss={() => dispatch({ type: 'SET_CIRCUIT_OPEN', data: null })}
+                />
+              )}
+              {/* Plan approval UI */}
+              {state.pendingPlan && (
+                <PlanApproval
+                  planId={state.pendingPlan.planId}
+                  planText={state.pendingPlan.planText}
+                  steps={state.pendingPlan.steps}
+                  onApprove={async (planId) => {
+                    await authFetch('/api/v1/plan/approve', { method: 'POST', body: JSON.stringify({ plan_id: planId }) })
+                    dispatch({ type: 'SET_PENDING_PLAN', data: null })
+                  }}
+                  onReject={async (planId) => {
+                    await authFetch('/api/v1/plan/reject', { method: 'POST', body: JSON.stringify({ plan_id: planId }) })
+                    dispatch({ type: 'SET_PENDING_PLAN', data: null })
+                  }}
+                />
+              )}
               <ChatInput onSend={handleSend} disabled={state.isStreaming} pendingPermission={state.pendingPermission} onPermissionRespond={handlePermissionRespond} permissionMode={state.permissionMode} onPermissionModeChange={handlePermissionModeChange} contextUsage={state.contextUsage} />
             </main>
           </>
@@ -408,9 +484,18 @@ function App() {
       case 'terminal':
         return <TerminalDrawer isFullscreen={true} onToggleFullscreen={() => setPageMode('agent')} />
       case 'files':
-        return <PlaceholderPage icon="folder" title="文件管理" description="文件浏览器功能开发中 (Task 14)" />
+        return (
+          <>
+            <FileTree />
+            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--ops-bg-canvas)', overflow: 'hidden', minWidth: 0 }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-fg-muted)' }}>选择文件查看内容</span>
+              </div>
+            </main>
+          </>
+        )
       case 'audit':
-        return <PlaceholderPage icon="description" title="审计日志" description="审计日志功能开发中 (Task 10)" />
+        return <AuditPage />
       case 'settings':
         return <SettingsPage />
       case 'desktop':
@@ -429,13 +514,17 @@ function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {!authToken ? (
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      ) : (
+      <>
       {/* Header */}
-      <AppHeader health={health} mode={pageMode === 'desktop' ? 'desktop' : 'chat'} onModeChange={handleModeChange} connected={connected} />
+      <AppHeader health={health} mode={pageMode === 'desktop' ? 'desktop' : 'chat'} onModeChange={handleModeChange} connected={connected} onLogout={handleLogout} />
 
       {/* Main body */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* SideNav — 44px */}
-        <SideNav active={pageMode} onNavigate={handleNavigate} />
+        <SideNav active={leftPanel === 'files' ? 'files' : pageMode} onNavigate={handleNavigate} />
 
         {/* Main content */}
         {renderMainContent()}
@@ -449,6 +538,7 @@ function App() {
             healthLoading={healthLoading}
             isStreaming={state.isStreaming}
             onClose={() => setRightPanelVisible(false)}
+            pageMode={pageMode}
           />
         )}
         {!rightPanelVisible && pageMode !== 'desktop' && (
@@ -482,6 +572,8 @@ function App() {
 
       {/* Status Bar — 22px */}
       <StatusBar health={health} connected={connected} />
+      </>
+      )}
     </div>
   )
 }

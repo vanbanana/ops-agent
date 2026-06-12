@@ -68,7 +68,7 @@ func (m *MultiAgent) RunSync(ctx context.Context, question string) (string, erro
 		}
 
 		// Verify
-		vr, err := m.verify(ctx, question, allFindings)
+		vr, _, err := m.verify(ctx, question, allFindings)
 		if err != nil {
 			vr = &VerifierResult{Verified: false, Reason: "Verifier error: " + err.Error()}
 		}
@@ -225,16 +225,18 @@ func (m *MultiAgent) Run(ctx context.Context, sessionID, traceID, userMessage st
 		// Verifier phase
 		out <- Event{Type: "agent_role", Data: map[string]any{"role": "verifier"}}
 
-		vr, err := m.verify(ctx, userMessage, allFindings)
+		vr, verifyUsage, err := m.verify(ctx, userMessage, allFindings)
 		if err != nil {
 			// Verifier error → degrade gracefully
 			vr = &VerifierResult{Verified: false, Reason: "Verifier error: " + err.Error()}
 		}
+		totalTokens += verifyUsage.PromptTokens + verifyUsage.CompletionTokens
 
 		out <- Event{Type: "verifier_result", Data: map[string]any{
 			"verified": vr.Verified, "reason": vr.Reason,
 			"confidence": vr.Confidence, "missing_info": vr.MissingInfo,
 			"iteration": iter,
+			"tokens": map[string]any{"prompt": verifyUsage.PromptTokens, "completion": verifyUsage.CompletionTokens},
 		}}
 
 		if vr.Verified {
@@ -358,7 +360,7 @@ func (m *MultiAgent) executeSubtask(ctx context.Context, st Subtask, out chan<- 
 	return "子任务达到最大轮次", nil
 }
 
-func (m *MultiAgent) verify(ctx context.Context, question string, findings []string) (*VerifierResult, error) {
+func (m *MultiAgent) verify(ctx context.Context, question string, findings []string) (*VerifierResult, Usage, error) {
 	workDir, _ := os.Getwd()
 	systemPrompt := prompt.GetPrompt(prompt.RoleVerifier, workDir)
 
@@ -378,21 +380,21 @@ func (m *MultiAgent) verify(ctx context.Context, question string, findings []str
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, Usage{}, err
 	}
 
 	if len(resp.Choices) == 0 {
-		return &VerifierResult{Verified: false, Reason: "empty response"}, nil
+		return &VerifierResult{Verified: false, Reason: "empty response"}, resp.Usage, nil
 	}
 
 	content := extractJSON(resp.Choices[0].Message.Content)
 	var vr VerifierResult
 	if err := json.Unmarshal([]byte(content), &vr); err != nil {
 		// Parse failed → not verified but don't panic
-		return &VerifierResult{Verified: false, Reason: "JSON parse error: " + err.Error()}, nil
+		return &VerifierResult{Verified: false, Reason: "JSON parse error: " + err.Error()}, resp.Usage, nil
 	}
 
-	return &vr, nil
+	return &vr, resp.Usage, nil
 }
 
 func (m *MultiAgent) synthesize(question string, findings []string) string {

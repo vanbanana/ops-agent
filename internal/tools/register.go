@@ -1,5 +1,7 @@
 package tools
 
+import "log"
+
 // RegisterAllProbes registers all built-in probe tools.
 func RegisterAllProbes(r ToolRegistry) {
 	probes := []Tool{
@@ -17,9 +19,12 @@ func RegisterAllProbes(r ToolRegistry) {
 		NewProbeSystemInfo(),
 		NewBashTool(),
 		NewFileViewTool(),
+		NewReadToolOutputTool(),
 	}
 	for _, p := range probes {
-		_ = r.Register(p)
+		if err := r.Register(p); err != nil {
+			log.Printf("[tools] register probe %s failed: %v", p.Name(), err)
+		}
 	}
 }
 
@@ -34,12 +39,16 @@ func RegisterWriteTools(r ToolRegistry) {
 		&KillProcessTool{},
 	}
 	for _, w := range writes {
-		_ = r.Register(w)
+		if err := r.Register(w); err != nil {
+			log.Printf("[tools] register write tool %s failed: %v", w.Name(), err)
+		}
 	}
 }
 
 // RegisterMultiAgentTool registers the multi-agent orchestration tool.
 // The executor is provided by the agent package (dependency injection).
 func RegisterMultiAgentTool(r ToolRegistry, executor MultiAgentExecutor) {
-	_ = r.Register(NewMultiAgentTool(executor))
+	if err := r.Register(NewMultiAgentTool(executor)); err != nil {
+		log.Printf("[tools] register multi-agent tool failed: %v", err)
+	}
 }

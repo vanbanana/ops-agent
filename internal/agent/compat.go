@@ -32,5 +32,14 @@ const (
 	ErrLLMParse   = llm.ErrLLMParse
 )
 
-// Re-export constructor
+// Re-export constructors
 var NewLLMClient = llm.NewLLMClient
+var NewHotReloadClient = llm.NewHotReloadClient
+var NewModelPool = llm.NewModelPool
+
+// Type alias for HotReloadClient
+type HotReloadClient = llm.HotReloadClient
+
+// Type alias for ModelPool
+type ModelPool = llm.ModelPool
+type Provider = llm.Provider

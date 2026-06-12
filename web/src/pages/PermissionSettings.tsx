@@ -1,4 +1,5 @@
 import { type FC, useState, useEffect } from 'react'
+import { authFetch } from '../lib/auth'
 
 interface CommandEntry {
   name: string
@@ -15,7 +16,7 @@ const PERMANENT_BLACKLIST = [
 ]
 
 export const PermissionSettings: FC = () => {
-  const [mode, setMode] = useState<'default' | 'auto_approve'>('default')
+  const [mode, setMode] = useState<'default' | 'auto_approve' | 'plan'>('default')
   const [commands, setCommands] = useState<CommandEntry[]>([])
   const [search, setSearch] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -32,13 +33,12 @@ export const PermissionSettings: FC = () => {
 
   // Load current settings
   useEffect(() => {
-    fetch('/api/v1/permission/mode')
+    authFetch('/api/v1/permission/mode')
       .then(r => r.json())
       .then(d => { if (d?.data?.mode) setMode(d.data.mode) })
       .catch(() => {})
 
-    // Load whitelist from safety rules (served from backend)
-    fetch('/api/v1/tools')
+    authFetch('/api/v1/tools')
       .then(r => r.json())
       .then(() => {
         // For now, load hardcoded defaults matching rules.go
@@ -47,10 +47,9 @@ export const PermissionSettings: FC = () => {
       .catch(() => setCommands(getDefaultCommands()))
   }, [])
 
-  const handleModeChange = async (newMode: 'default' | 'auto_approve') => {
-    const res = await fetch('/api/v1/permission/mode', {
+  const handleModeChange = async (newMode: 'default' | 'auto_approve' | 'plan') => {
+    const res = await authFetch('/api/v1/permission/mode', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: newMode }),
     })
     if (res.ok) setMode(newMode)
@@ -129,9 +128,8 @@ export const PermissionSettings: FC = () => {
         allowed_subcommands: c.allowedSubcommands,
         forbidden_args: c.forbiddenArgs,
       }))
-      const res = await fetch('/api/v1/configs', {
+      const res = await authFetch('/api/v1/configs', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command_whitelist: JSON.stringify(whitelist) }),
       })
       if (!res.ok) {
@@ -181,7 +179,14 @@ export const PermissionSettings: FC = () => {
           <input type="radio" name="mode" checked={mode === 'auto_approve'} onChange={() => handleModeChange('auto_approve')} />
           <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-status-warn)' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 4 }}>lock_open</span>
-            全权限模式 — 自动执行所有操作（谨慎）
+            全权限模式 -- 自动执行所有操作(谨慎)
+          </span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input type="radio" name="mode" checked={mode === 'plan'} onChange={() => handleModeChange('plan')} />
+          <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-status-info)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: 'middle', marginRight: 4 }}>checklist</span>
+            计划模式 -- 先收集信息生成计划，审批后再执行
           </span>
         </label>
       </div>
@@ -222,7 +227,7 @@ export const PermissionSettings: FC = () => {
             <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 11, fontWeight: 600, color: 'var(--ops-fg-muted)' }}>限制</span>
             <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 11, fontWeight: 600, color: 'var(--ops-fg-muted)' }}>操作</span>
           </div>
-          {filtered.map((cmd, i) => (
+          {filtered.map((cmd) => (
             <div key={cmd.name} style={{ display: 'grid', gridTemplateColumns: '100px 80px 1fr 60px', padding: '6px 10px', borderBottom: '1px solid var(--ops-border-subtle)' }}>
               <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 12, color: 'var(--ops-fg-primary)' }}>{cmd.name}</span>
               <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 11, color: 'var(--ops-fg-secondary)' }}>{typeLabel(cmd.type)}</span>

@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 // Data: POST /api/v1/safety/preview, POST /api/v1/safety/confirm
 import { type FC, useState, useEffect, useCallback } from 'react'
 
@@ -27,9 +28,8 @@ export const RiskPreviewModal: FC<RiskPreviewModalProps> = ({ command, descripti
   useEffect(() => {
     const createPreview = async () => {
       try {
-        const res = await fetch('/api/v1/safety/preview', {
+        const res = await authFetch('/api/v1/safety/preview', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command, description }),
         })
         if (res.ok) {
@@ -59,9 +59,8 @@ export const RiskPreviewModal: FC<RiskPreviewModalProps> = ({ command, descripti
     if (!preview || countdown > 0) return
     setConfirming(true)
     try {
-      const res = await fetch('/api/v1/safety/confirm', {
+      const res = await authFetch('/api/v1/safety/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preview_id: preview.preview_id, confirmed: true }),
       })
       if (res.ok) {
@@ -80,9 +79,8 @@ export const RiskPreviewModal: FC<RiskPreviewModalProps> = ({ command, descripti
   const handleCancel = useCallback(async () => {
     if (preview) {
       // Notify backend of cancellation (best effort)
-      fetch('/api/v1/safety/confirm', {
+      authFetch('/api/v1/safety/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preview_id: preview.preview_id, confirmed: false }),
       }).catch(() => {})
     }

@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 import { type FC, useState } from 'react'
 import type { PermissionRequestData } from '../types/api'
 
@@ -14,9 +15,8 @@ export const PermissionBanner: FC<PermissionBannerProps> = ({ permission, onResp
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/v1/permission/respond', {
+      const res = await authFetch('/api/v1/permission/respond', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ request_id: permission.request_id, action }),
       })
       if (!res.ok) {
@@ -29,9 +29,8 @@ export const PermissionBanner: FC<PermissionBannerProps> = ({ permission, onResp
       // Auto-retry once after 2s
       setTimeout(async () => {
         try {
-          const res = await fetch('/api/v1/permission/respond', {
+          const res = await authFetch('/api/v1/permission/respond', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ request_id: permission.request_id, action }),
           })
           if (res.ok) {

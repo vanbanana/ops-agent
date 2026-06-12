@@ -1,5 +1,6 @@
 // Data: POST /api/v1/auth/login
 import { type FC, useState, useCallback } from 'react'
+import { setAuthToken } from '../lib/auth'
 
 interface LoginPageProps {
   onLoginSuccess: (token: string) => void
@@ -26,12 +27,11 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
       })
       const json = await res.json()
 
-      if (res.ok && json.token) {
-        localStorage.setItem('ops_token', json.token)
-        onLoginSuccess(json.token)
-      } else if (res.status === 429 || json.error_code === 'AUTH_LOCKED_001') {
-        // IP locked
-        const remaining = json.lock_remaining_seconds ?? 900
+      if (res.ok && json.data?.token) {
+        setAuthToken(json.data.token)
+        onLoginSuccess(json.data.token)
+      } else if (res.status === 429 || json.error_code === 'AUTH_RATE_001' || json.error_code === 'AUTH_LOCKED_001') {
+        const remaining = json.remaining_seconds ?? json.lock_remaining_seconds ?? 180
         setLockRemaining(remaining)
         setError(`IP 已锁定，剩余 ${formatLockTime(remaining)}`)
         startLockCountdown(remaining)
@@ -134,7 +134,7 @@ export const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         {/* Warning */}
         <div style={{ fontSize: 11, color: 'var(--ops-fg-muted)', textAlign: 'center' }}>
-          5 次错误尝试将锁定 IP 15 分钟
+          5 次错误尝试将锁定 IP 3 分钟
         </div>
       </form>
 

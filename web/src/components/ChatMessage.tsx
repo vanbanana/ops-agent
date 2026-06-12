@@ -19,15 +19,16 @@ interface ChatMessageProps {
 export const ChatMessageComponent: FC<ChatMessageProps> = ({ message, isStreaming = false, isLastAgent = false, onRetry, onStop }) => {
   const isUser = message.role === 'user'
 
-  // Blocked message — red injection card (unchanged)
+  // Blocked message — red injection card with rule details
   if (message.isBlocked) {
+    const rules = (message.error as any)?.rules as Array<{rule_id: string; reason: string; snippet: string}> | undefined
     return (
       <MessageLayout
         avatar={<AvatarBadge bg="var(--ops-status-danger)" icon="shield" iconColor="#0E1116" />}
       >
         <div style={{ flex: 1, borderLeft: '2px solid var(--ops-status-danger)', padding: '8px 12px', borderRadius: '0 6px 6px 0', background: 'var(--ops-bg-elevated)' }}>
           <div style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--ops-status-danger)', marginBottom: 4 }}>
-            注入拦截
+            安全拦截
           </div>
           <div style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 12, color: 'var(--ops-fg-secondary)' }}>
             {message.content}
@@ -35,6 +36,15 @@ export const ChatMessageComponent: FC<ChatMessageProps> = ({ message, isStreamin
           {message.error && (
             <div style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 10, color: 'var(--ops-fg-muted)', marginTop: 4 }}>
               {message.error.error_code}: {message.error.message}
+            </div>
+          )}
+          {rules && rules.length > 0 && (
+            <div style={{ marginTop: 6, padding: '4px 8px', background: 'rgba(255,59,48,0.06)', borderRadius: 4 }}>
+              {rules.map((r, i) => (
+                <div key={i} style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 10, color: 'var(--ops-fg-muted)', padding: '2px 0' }}>
+                  <span style={{ color: 'var(--ops-status-danger)', fontWeight: 500 }}>{r.rule_id}</span> {r.reason}
+                </div>
+              ))}
             </div>
           )}
         </div>

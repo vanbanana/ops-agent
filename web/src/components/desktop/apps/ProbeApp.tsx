@@ -1,3 +1,4 @@
+import { authFetch } from '../../../lib/auth'
 // Data: POST /api/v1/desktop/probe/{name}
 // 通用探针数据展示组件 — 多个窗口应用复用
 import { type FC, useEffect, useState, useCallback } from 'react'
@@ -16,9 +17,8 @@ export const ProbeApp: FC<ProbeAppProps> = ({ probeName, connected, title }) => 
     if (!connected) { setLoading(false); setOutput('未连接后端'); return }
     setLoading(true)
     try {
-      const res = await fetch(`/api/v1/desktop/probe/${probeName}`, {
+      const res = await authFetch(`/api/v1/desktop/probe/${probeName}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: '{}',
       })
       if (res.ok) {

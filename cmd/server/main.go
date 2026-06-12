@@ -15,6 +15,8 @@ import (
 	"ops-agent/internal/api"
 	"ops-agent/internal/audit"
 	"ops-agent/internal/config"
+	"ops-agent/internal/llm"
+	mcpkg "ops-agent/internal/mcp"
 	"ops-agent/internal/permission"
 	"ops-agent/internal/safety"
 	"ops-agent/internal/store"
@@ -40,8 +42,8 @@ func main() {
 		log.Fatalf("configuration error: %v", err)
 	}
 
-	// Initialize LLM client
-	llmClient := agent.NewLLMClient(agent.ClientConfig{
+	// Initialize LLM client (hot-reloadable)
+	llmClient := agent.NewHotReloadClient(agent.ClientConfig{
 		BaseURL: cfg.LLMBaseURL,
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
@@ -53,12 +55,74 @@ func main() {
 	tools.RegisterAllProbes(registry)
 	tools.RegisterWriteTools(registry)
 
+	// Initialize MCP Manager (connect to external MCP Servers)
+	mcpManager := mcpkg.NewManager(registry)
+
 	// Initialize SQLite database (used for audit logs + session persistence)
 	db, err := store.OpenDB(cfg.DBPath)
 	if err != nil {
-		log.Printf("⚠️  SQLite unavailable (%v), audit logs disabled", err)
+		log.Printf("warning: SQLite unavailable (%v), audit logs disabled", err)
 	} else {
 		defer db.Close()
+	}
+
+	// Initialize model pool (load from DB > providers.json > .env fallback)
+	modelPool := llm.NewModelPool(db, "providers.json", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
+
+	// Load and connect MCP Servers from DB
+	if db != nil {
+		var mcpConfigs []mcpkg.ServerConfig
+		rows, err := db.Query(`SELECT id, name, transport, command, args, url, env, is_active FROM mcp_servers`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s mcpkg.ServerConfig
+				var argsJSON, envJSON string
+				var isActive int
+				if err := rows.Scan(&s.ID, &s.Name, &s.Transport, &s.Command, &argsJSON, &s.URL, &envJSON, &isActive); err != nil {
+					continue
+				}
+				json.Unmarshal([]byte(argsJSON), &s.Args)
+				json.Unmarshal([]byte(envJSON), &s.Env)
+				s.IsActive = isActive == 1
+				mcpConfigs = append(mcpConfigs, s)
+			}
+		}
+		// If no MCP servers configured, seed with Context7 (remote SSE, no local deps)
+		if len(mcpConfigs) == 0 {
+			context7 := mcpkg.ServerConfig{
+				ID: "context7", Name: "context7", Transport: "streamable",
+				URL:      "https://mcp.context7.com/mcp",
+				IsActive: true,
+			}
+			mcpConfigs = append(mcpConfigs, context7)
+			// Persist to DB
+			argsJSON, _ := json.Marshal(context7.Args)
+			envJSON, _ := json.Marshal(context7.Env)
+			db.Exec(`INSERT OR IGNORE INTO mcp_servers (id, name, transport, command, args, url, env, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				context7.ID, context7.Name, context7.Transport, context7.Command, string(argsJSON), context7.URL, string(envJSON), 1)
+		}
+		mcpManager.ConnectAll(mcpConfigs)
+	}
+
+	modelPool.SetOnChange(func(active llm.Provider) {
+		llmClient.Reload(agent.ClientConfig{
+			BaseURL: active.BaseURL,
+			APIKey:  active.APIKey,
+			Model:   active.ModelID,
+			Timeout: 60 * time.Second,
+		})
+		log.Printf("model switched to: %s (%s)", active.Name, active.ModelID)
+	})
+
+	// If pool has an active provider different from env, apply it now
+	if active, ok := modelPool.GetActive(); ok {
+		llmClient.Reload(agent.ClientConfig{
+			BaseURL: active.BaseURL,
+			APIKey:  active.APIKey,
+			Model:   active.ModelID,
+			Timeout: 60 * time.Second,
+		})
 	}
 
 	// Initialize session store (SQLite persistent)
@@ -97,8 +161,23 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(120 * time.Second))
 
-	// Rate limiting: 60 req/min per token/IP
-	rateLimiter := api.NewRateLimiter(60, 1*time.Minute)
+	// CORS middleware for production deployment
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+
+	// Rate limiting: 200 req/min per token/IP
+	rateLimiter := api.NewRateLimiter(200, 1*time.Minute)
 	r.Use(rateLimiter.Middleware)
 
 	// Auth middleware: enforce JWT only in production (non-default secret)
@@ -128,20 +207,30 @@ func main() {
 
 	// Public routes (no auth)
 	r.Post("/api/v1/auth/login", authService.HandleLogin)
+	r.Get("/api/v1/auth/lockouts", authService.HandleListLockouts)
+	r.Delete("/api/v1/auth/lockout/{ip}", authService.HandleUnlockIP)
 
 	// Health check — quick (no LLM ping, for frontend polling)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		activeModel := cfg.LLMModel
+		if active, ok := modelPool.GetActive(); ok {
+			activeModel = active.ModelID
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status": "healthy",
 			"components": map[string]any{
-				"llm": map[string]any{"vendor": cfg.LLMModel, "status": "configured"},
+				"llm": map[string]any{"vendor": activeModel, "status": "configured"},
 			},
 		})
 	})
 
 	// Deep health check — pings LLM (10.12: returns degraded when unreachable)
 	r.Get("/health/deep", func(w http.ResponseWriter, r *http.Request) {
+		activeModel := cfg.LLMModel
+		if active, ok := modelPool.GetActive(); ok {
+			activeModel = active.ModelID
+		}
 		llmStatus := "up"
 		overallStatus := "healthy"
 
@@ -159,7 +248,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{
 			"status": overallStatus,
 			"components": map[string]any{
-				"llm": map[string]any{"vendor": cfg.LLMModel, "status": llmStatus},
+				"llm": map[string]any{"vendor": activeModel, "status": llmStatus},
 			},
 		})
 	})
@@ -187,6 +276,55 @@ func main() {
 				"count": len(defs),
 			},
 		})
+	})
+
+	// Tools status (all tools with enable/disable state — for settings UI)
+	r.Get("/api/v1/tools/status", func(w http.ResponseWriter, r *http.Request) {
+		status := registry.AllStatus()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": status})
+	})
+
+	// Toggle tool enable/disable
+	r.Post("/api/v1/tools/toggle", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "invalid request"})
+			return
+		}
+		if req.Name == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "name is required"})
+			return
+		}
+		if _, ok := registry.Get(req.Name); !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"code": 404, "error": "tool not found"})
+			return
+		}
+		if req.Enabled {
+			registry.Enable(req.Name)
+		} else {
+			registry.Disable(req.Name)
+		}
+		// Persist to configs table
+		if db != nil {
+			val := "1"
+			if !req.Enabled {
+				val = "0"
+			}
+			db.Exec(`INSERT OR REPLACE INTO configs (key, value, updated_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+				"tool_enabled_"+req.Name, val)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"name": req.Name, "enabled": req.Enabled}})
 	})
 
 	// Chat stream (SSE)
@@ -367,6 +505,20 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": msgs})
 	})
+
+	// Session detail (metadata + messages)
+	r.Get("/api/v1/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		msgs := sessions.GetRecentMessages(id, 100)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       id,
+				"messages": msgs,
+			},
+		})
+	})
 	r.Get("/api/v1/fs/stat", api.HandleFSStat)
 	r.Post("/api/v1/fs/mkdir", api.HandleFSMkdir)
 	r.Post("/api/v1/fs/rename", api.HandleFSRename)
@@ -421,16 +573,35 @@ func main() {
 			return
 		}
 		switch permission.Mode(req.Mode) {
-		case permission.ModeDefault, permission.ModeAutoApprove:
+		case permission.ModeDefault, permission.ModeAutoApprove, permission.ModePlan:
 			permSvc.SetMode(permission.Mode(req.Mode))
+			// Activate/deactivate plan state machine accordingly
+			if permission.Mode(req.Mode) == permission.ModePlan {
+				agentInstance.PlanState().StartPlanning(fmt.Sprintf("plan_%d", time.Now().UnixNano()))
+			} else {
+				agentInstance.PlanState().Reset()
+			}
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "mode must be 'default' or 'auto_approve'"})
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "mode must be 'default', 'auto_approve', or 'plan'"})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"mode": req.Mode}})
+	})
+
+	// Plan mode approve/reject
+	r.Post("/api/v1/plan/approve", func(w http.ResponseWriter, r *http.Request) {
+		agentInstance.PlanState().Approve()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "approved"}})
+	})
+
+	r.Post("/api/v1/plan/reject", func(w http.ResponseWriter, r *http.Request) {
+		agentInstance.PlanState().Reject()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "rejected"}})
 	})
 
 	// Risk preview (Task 12)
@@ -483,6 +654,161 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "ok"}})
+	})
+
+	// Model pool API
+	modelsHandler := &api.ModelsHandler{Pool: modelPool}
+	r.Get("/api/v1/models/pool", modelsHandler.HandleGetPool)
+	r.Put("/api/v1/models/pool", modelsHandler.HandleSavePool)
+	r.Post("/api/v1/models/switch", modelsHandler.HandleSwitch)
+	r.Post("/api/v1/models/test", modelsHandler.HandleTest)
+
+	// MCP Servers management API
+	r.Get("/api/v1/mcp/servers", func(w http.ResponseWriter, r *http.Request) {
+		servers := mcpManager.GetServers()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": servers})
+	})
+
+	r.Post("/api/v1/mcp/servers", func(w http.ResponseWriter, r *http.Request) {
+		var srv mcpkg.ServerConfig
+		if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "invalid request"})
+			return
+		}
+		if srv.ID == "" || srv.Name == "" || srv.Transport == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"code": 400, "error": "id, name, transport required"})
+			return
+		}
+		// Persist to DB
+		if db != nil {
+			argsJSON, _ := json.Marshal(srv.Args)
+			envJSON, _ := json.Marshal(srv.Env)
+			isActive := 0
+			if srv.IsActive {
+				isActive = 1
+			}
+			db.Exec(`INSERT OR REPLACE INTO mcp_servers (id, name, transport, command, args, url, env, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				srv.ID, srv.Name, srv.Transport, srv.Command, string(argsJSON), srv.URL, string(envJSON), isActive)
+		}
+		// Reconnect if active
+		if srv.IsActive {
+			go mcpManager.ConnectAll([]mcpkg.ServerConfig{srv})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": srv})
+	})
+
+	r.Delete("/api/v1/mcp/servers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if db != nil {
+			db.Exec(`DELETE FROM mcp_servers WHERE id = ?`, id)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"status": "ok"}})
+	})
+
+	// Terminal exec API
+	r.Post("/api/v1/terminal/exec", api.HandleTerminalExec)
+
+	// Audit log read API
+	r.Get("/api/v1/audit/logs", func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+			return
+		}
+		limit := 100
+		rows, err := db.Query(`SELECT id, trace_id, session_id, round_number, stage, role, content, triggered_by, status, duration_ms, created_at FROM audit_logs ORDER BY created_at DESC LIMIT ?`, limit)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+			return
+		}
+		defer rows.Close()
+		var logs []map[string]any
+		for rows.Next() {
+			var id int
+			var traceID, sessionID, stage, content, triggeredBy, status, createdAt string
+			var role *string
+			var roundNumber, durationMs int
+			if err := rows.Scan(&id, &traceID, &sessionID, &roundNumber, &stage, &role, &content, &triggeredBy, &status, &durationMs, &createdAt); err != nil {
+				continue
+			}
+			entry := map[string]any{
+				"id": id, "trace_id": traceID, "session_id": sessionID,
+				"round": roundNumber, "stage": stage, "content": content,
+				"triggered_by": triggeredBy, "status": status,
+				"duration_ms": durationMs, "created_at": createdAt,
+			}
+			if role != nil {
+				entry["role"] = *role
+			}
+			logs = append(logs, entry)
+		}
+		if logs == nil {
+			logs = []map[string]any{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": logs})
+	})
+
+	// Audit trace — single request full chain by trace_id
+	r.Get("/api/v1/audit/{traceID}", func(w http.ResponseWriter, r *http.Request) {
+		traceID := chi.URLParam(r, "traceID")
+		if db == nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+			return
+		}
+		rows, err := db.Query(`SELECT id, trace_id, session_id, round_number, stage, role, content, triggered_by, status, duration_ms, created_at FROM audit_logs WHERE trace_id = ? ORDER BY created_at ASC`, traceID)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+			return
+		}
+		defer rows.Close()
+		var entries []map[string]any
+		for rows.Next() {
+			var id int
+			var tid, sessionID, stage, content, triggeredBy, status, createdAt string
+			var role *string
+			var roundNumber, durationMs int
+			if err := rows.Scan(&id, &tid, &sessionID, &roundNumber, &stage, &role, &content, &triggeredBy, &status, &durationMs, &createdAt); err != nil {
+				continue
+			}
+			entry := map[string]any{
+				"id": id, "trace_id": tid, "session_id": sessionID,
+				"round": roundNumber, "stage": stage, "content": content,
+				"triggered_by": triggeredBy, "status": status,
+				"duration_ms": durationMs, "created_at": createdAt,
+			}
+			if role != nil {
+				entry["role"] = *role
+			}
+			entries = append(entries, entry)
+		}
+		if entries == nil {
+			entries = []map[string]any{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": entries})
+	})
+
+	// Active model info (lightweight, for frontend header display)
+	r.Get("/api/v1/models/active", func(w http.ResponseWriter, r *http.Request) {
+		active, ok := modelPool.GetActivePublic()
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"model": cfg.LLMModel}})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": active})
 	})
 
 	// Desktop probe — direct tool call without LLM (Task 14)
@@ -649,10 +975,34 @@ func main() {
 		})
 	})
 
-	fmt.Printf("🚀 ops-agent listening on :%s\n", cfg.Port)
-	fmt.Printf("   LLM: %s (%s)\n", cfg.LLMModel, cfg.LLMBaseURL)
+	activeModelName := cfg.LLMModel
+	if active, ok := modelPool.GetActive(); ok {
+		activeModelName = active.Name + " (" + active.ModelID + ")"
+	}
+	fmt.Printf("ops-agent listening on :%s\n", cfg.Port)
+	fmt.Printf("   LLM: %s @ %s\n", activeModelName, cfg.LLMBaseURL)
 	fmt.Printf("   Tools: %d registered\n", len(registry.List()))
+	fmt.Printf("   Model Pool: %d providers\n", len(modelPool.GetAll()))
 	fmt.Printf("\n   Try: curl -X POST http://localhost:%s/api/v1/chat -H 'Content-Type: application/json' -d '{\"message\":\"看下磁盘\"}'\n", cfg.Port)
+
+	// Serve frontend static files (production mode: serve from ./web/ directory)
+	webDir := "./web"
+	if _, err := os.Stat(webDir + "/index.html"); err == nil {
+		// Serve static assets
+		fileServer := http.FileServer(http.Dir(webDir))
+		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			// Try to serve static file first
+			path := req.URL.Path
+			filePath := webDir + path
+			if _, err := os.Stat(filePath); err == nil && path != "/" {
+				fileServer.ServeHTTP(w, req)
+				return
+			}
+			// Fallback to index.html (SPA routing)
+			http.ServeFile(w, req, webDir+"/index.html")
+		})
+		fmt.Printf("   Web UI: http://localhost:%s (serving from %s)\n", cfg.Port, webDir)
+	}
 
 	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
 		log.Fatalf("server failed: %v", err)

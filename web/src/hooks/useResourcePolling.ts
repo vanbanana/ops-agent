@@ -1,13 +1,14 @@
 // Data: POST /api/v1/desktop/probe/{name} (Task 14)
 // 每10s轮询探针获取资源数据，不走 LLM
 import { useEffect, useRef } from 'react'
+import { authFetch } from '../lib/auth'
 import type { ResourceData } from '../types/api'
 
-const POLL_INTERVAL = 10_000
+const POLL_INTERVAL = 30_000
 
 type Dispatch = (action: { type: 'UPDATE_RESOURCES'; data: Partial<ResourceData> }) => void
 
-export function useResourcePolling(connected: boolean, dispatch: Dispatch) {
+export function useResourcePolling(connected: boolean, authToken: string | null, dispatch: Dispatch) {
   const connectedRef = useRef(connected)
   connectedRef.current = connected
 
@@ -15,17 +16,21 @@ export function useResourcePolling(connected: boolean, dispatch: Dispatch) {
   dispatchRef.current = dispatch
 
   useEffect(() => {
-    if (!connected) return
+    if (!connected || !authToken) return
 
     let cancelled = false
+    let rateLimited = false
 
     async function fetchProbe(name: string): Promise<string | null> {
       try {
-        const res = await fetch(`/api/v1/desktop/probe/${name}`, {
+        const res = await authFetch(`/api/v1/desktop/probe/${name}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: '{}',
         })
+        if (res.status === 429) {
+          rateLimited = true
+          return null
+        }
         if (!res.ok) return null
         const json = await res.json()
         return json.data?.result ?? json.data?.summary ?? null
@@ -35,7 +40,7 @@ export function useResourcePolling(connected: boolean, dispatch: Dispatch) {
     }
 
     async function pollAll() {
-      if (cancelled || !connectedRef.current) return
+      if (cancelled || !connectedRef.current || rateLimited) return
 
       const [diskRaw, topRaw, memRaw, procRaw, netRaw] = await Promise.all([
         fetchProbe('disk'),
@@ -46,6 +51,8 @@ export function useResourcePolling(connected: boolean, dispatch: Dispatch) {
       ])
 
       if (cancelled) return
+
+      if (rateLimited) return
 
       // Parse disk
       if (diskRaw && typeof diskRaw === 'string') {
@@ -105,7 +112,7 @@ export function useResourcePolling(connected: boolean, dispatch: Dispatch) {
       cancelled = true
       clearInterval(interval)
     }
-  }, [connected])
+  }, [connected, authToken])
 }
 
 

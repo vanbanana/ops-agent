@@ -1,0 +1,26 @@
+[
+  {
+    "id": "mimo-pro",
+    "name": "MiMo V2.5 Pro",
+    "provider": "xiaomi",
+    "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+    "api_key": "tp-your-key-here",
+    "model_id": "mimo-v2.5-pro",
+    "context_window": 32768,
+    "max_output": 8192,
+    "is_active": true,
+    "can_reason": true
+  },
+  {
+    "id": "deepseek-flash",
+    "name": "DeepSeek V4 Flash",
+    "provider": "deepseek",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-your-key-here",
+    "model_id": "deepseek-v4-flash",
+    "context_window": 128000,
+    "max_output": 8192,
+    "is_active": false,
+    "can_reason": true
+  }
+]

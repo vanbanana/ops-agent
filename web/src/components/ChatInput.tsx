@@ -1,15 +1,23 @@
+import { authFetch } from '../lib/auth'
 // Data: POST /api/v1/chat/stream (sends user message)
 import { type FC, useState, useRef, useEffect, useCallback } from 'react'
 import { PermissionBanner } from './PermissionBanner'
 import type { PermissionRequestData } from '../types/api'
+
+interface ModelOption {
+  id: string
+  name: string
+  provider: string
+  is_active: boolean
+}
 
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled: boolean
   pendingPermission?: PermissionRequestData | null
   onPermissionRespond?: (requestId: string, action: 'allow' | 'allow_session' | 'deny') => void
-  permissionMode?: 'default' | 'auto_approve'
-  onPermissionModeChange?: (mode: 'default' | 'auto_approve') => void
+  permissionMode?: 'default' | 'auto_approve' | 'plan'
+  onPermissionModeChange?: (mode: 'default' | 'auto_approve' | 'plan') => void
   contextUsage?: number
 }
 
@@ -30,8 +38,59 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
   const [showCommands, setShowCommands] = useState(false)
   const [filteredCommands, setFilteredCommands] = useState(COMMANDS)
   const [showModeConfirm, setShowModeConfirm] = useState(false)
+  const [models, setModels] = useState<ModelOption[]>([])
+  const [activeModel, setActiveModel] = useState<string>('')
+  const [showModelPicker, setShowModelPicker] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const modelPickerRef = useRef<HTMLDivElement>(null)
+
+  // Load models from pool
+  useEffect(() => {
+    authFetch('/api/v1/models/pool')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.data?.providers) {
+          const list = d.data.providers.map((p: { id: string; name: string; provider: string; is_active: boolean }) => ({
+            id: p.id, name: p.name, provider: p.provider, is_active: p.is_active,
+          }))
+          setModels(list)
+          const active = list.find((m: ModelOption) => m.is_active)
+          if (active) setActiveModel(active.name)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Close model picker on click outside
+  useEffect(() => {
+    if (!showModelPicker) return
+    const handler = (e: MouseEvent) => {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showModelPicker])
+
+  const [switchToast, setSwitchToast] = useState<string | null>(null)
+
+  const handleModelSwitch = async (id: string, name: string) => {
+    setShowModelPicker(false)
+    try {
+      const res = await authFetch('/api/v1/models/switch', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      if (res.ok) {
+        setActiveModel(name)
+        setModels(prev => prev.map(m => ({ ...m, is_active: m.id === id })))
+        setSwitchToast(`已切换: ${name}`)
+        setTimeout(() => setSwitchToast(null), 2000)
+      }
+    } catch { /* ignore */ }
+  }
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current
@@ -88,12 +147,19 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
   return (
     <div
       style={{
-        padding: '10px 48px',
+        padding: '10px 24px',
         background: 'var(--ops-bg-canvas)',
         flexShrink: 0,
         position: 'relative',
       }}
     >
+      {/* Model switch toast */}
+      {switchToast && (
+        <div style={{ position: 'absolute', top: -32, left: '50%', transform: 'translateX(-50%)', padding: '4px 12px', borderRadius: 4, background: 'var(--ops-bg-elevated)', border: '1px solid var(--ops-border-default)', fontFamily: 'var(--ops-font-ui)', fontSize: 11, color: '#34c759', whiteSpace: 'nowrap', zIndex: 100 }}>
+          {switchToast}
+        </div>
+      )}
+
       {/* Permission banner — appears above input when pending */}
       {pendingPermission && pendingPermission.status === 'pending' && onPermissionRespond && (
         <PermissionBanner permission={pendingPermission} onRespond={onPermissionRespond} />
@@ -106,8 +172,8 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
           style={{
             position: 'absolute',
             bottom: '100%',
-            left: 48,
-            right: 48,
+            left: 24,
+            right: 24,
             background: 'var(--ops-bg-elevated)',
             border: '1px solid var(--ops-border-default)',
             borderRadius: 0,
@@ -195,15 +261,66 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
             <ContextRing percent={contextUsage} />
           </div>
 
-          {/* Right: char count + mode toggle + send */}
+          {/* Right: char count + model selector + mode toggle + send */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 10, color: charColor }}>
               {text.length}/{MAX_CHARS}
             </span>
-            {/* Permission mode toggle */}
+            {/* Model selector */}
+            <div style={{ position: 'relative' }} ref={modelPickerRef}>
+              <button
+                onClick={() => setShowModelPicker(!showModelPicker)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                }}
+                title="切换模型"
+              >
+                <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 11, color: 'var(--ops-fg-secondary)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {activeModel || 'loading...'}
+                </span>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--ops-fg-muted)' }}>
+                  {showModelPicker ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+              {showModelPicker && models.length > 0 && (
+                <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: 4, background: 'var(--ops-bg-elevated)', border: '1px solid var(--ops-border-default)', borderRadius: 6, padding: '4px 0', zIndex: 200, minWidth: 180, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                  {models.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleModelSwitch(m.id, m.name)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 12px',
+                        border: 'none',
+                        background: m.is_active ? 'var(--ops-bg-canvas)' : 'transparent',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.is_active ? '#34c759' : 'transparent', flexShrink: 0 }} />
+                      <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 12, color: 'var(--ops-fg-primary)', flex: 1 }}>{m.name}</span>
+                      <span style={{ fontFamily: 'var(--ops-font-ui)', fontSize: 10, color: 'var(--ops-fg-muted)' }}>{m.provider}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Permission mode toggle (3 states: default → plan → auto_approve) */}
             <button
               onClick={() => {
                 if (permissionMode === 'default') {
+                  onPermissionModeChange?.('plan')
+                } else if (permissionMode === 'plan') {
                   setShowModeConfirm(true)
                 } else {
                   onPermissionModeChange?.('default')
@@ -219,25 +336,35 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
                 padding: '2px 4px',
                 borderRadius: 4,
               }}
-              title={permissionMode === 'auto_approve' ? '全权限模式（点击切回标准）' : '标准模式（点击切换全权限）'}
+              title={
+                permissionMode === 'auto_approve' ? '全权限模式（点击切回标准）' :
+                permissionMode === 'plan' ? '计划模式（只读探查，点击切换全权限）' :
+                '标准模式（点击切换计划模式）'
+              }
             >
               <span
                 className="material-symbols-outlined"
                 style={{
                   fontSize: 14,
-                  color: permissionMode === 'auto_approve' ? 'var(--ops-status-warn)' : 'var(--ops-fg-muted)',
+                  color: permissionMode === 'auto_approve' ? 'var(--ops-status-warn)' :
+                         permissionMode === 'plan' ? 'var(--ops-status-info, #3b82f6)' :
+                         'var(--ops-fg-muted)',
                 }}
               >
-                {permissionMode === 'auto_approve' ? 'lock_open' : 'lock'}
+                {permissionMode === 'auto_approve' ? 'lock_open' :
+                 permissionMode === 'plan' ? 'assignment' : 'lock'}
               </span>
               <span
                 style={{
                   fontSize: 11,
                   fontFamily: 'var(--ops-font-ui)',
-                  color: permissionMode === 'auto_approve' ? 'var(--ops-status-warn)' : 'var(--ops-fg-muted)',
+                  color: permissionMode === 'auto_approve' ? 'var(--ops-status-warn)' :
+                         permissionMode === 'plan' ? 'var(--ops-status-info, #3b82f6)' :
+                         'var(--ops-fg-muted)',
                 }}
               >
-                {permissionMode === 'auto_approve' ? '全权限' : '标准模式'}
+                {permissionMode === 'auto_approve' ? '全权限' :
+                 permissionMode === 'plan' ? '计划模式' : '标准模式'}
               </span>
             </button>
             {/* Send button */}
@@ -271,7 +398,7 @@ export const ChatInput: FC<ChatInputProps> = ({ onSend, disabled, pendingPermiss
           style={{
             position: 'absolute',
             bottom: 60,
-            right: 48,
+            right: 24,
             padding: '8px 12px',
             background: 'var(--ops-bg-elevated)',
             border: '1px solid var(--ops-border-default)',
@@ -353,14 +480,18 @@ const ContextRing: FC<{ percent: number }> = ({ percent }) => {
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const filled = (percent / 100) * circumference
-  const color = percent >= 90 ? 'var(--ops-status-danger)' : percent >= 70 ? 'var(--ops-status-warn)' : 'var(--ops-status-ok)'
+  const color = percent >= 90 ? 'var(--ops-status-danger)' : percent >= 70 ? 'var(--ops-status-warn)' : percent > 0 ? 'var(--ops-status-ok)' : 'var(--ops-fg-muted)'
+
+  const budget = 19660
+  const used = Math.round((percent / 100) * budget)
 
   return (
-    <div title={`上下文使用 ${percent}%`} style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div
+      title={`上下文窗口: ${used.toLocaleString()}/${budget.toLocaleString()} tokens (${percent}%)\n超过 90% 时会触发自动压缩`}
+      style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'default' }}
+    >
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        {/* Track */}
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--ops-border-subtle)" strokeWidth={stroke} />
-        {/* Progress — only render when percent > 0 */}
         {percent > 0 && (
           <circle
             cx={size / 2} cy={size / 2} r={radius} fill="none"
@@ -370,6 +501,9 @@ const ContextRing: FC<{ percent: number }> = ({ percent }) => {
           />
         )}
       </svg>
+      <span style={{ fontFamily: 'var(--ops-font-mono)', fontSize: 9, color, lineHeight: 1 }}>
+        {percent > 0 ? `${percent}%` : 'ctx'}
+      </span>
     </div>
   )
 }

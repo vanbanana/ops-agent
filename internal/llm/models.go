@@ -15,7 +15,7 @@ type ModelInfo struct {
 var SupportedModels = map[string]ModelInfo{
 	"mimo-v2.5-pro": {
 		ID: "mimo-v2.5-pro", Name: "MiMo V2.5 Pro",
-		ContextWindow: 32768, MaxOutput: 8192,
+		ContextWindow: 1000000, MaxOutput: 16384,
 		CanReason: true, CanThink: true,
 	},
 	"mimo-v2-flash": {
@@ -25,17 +25,27 @@ var SupportedModels = map[string]ModelInfo{
 	},
 	"deepseek-v4-flash": {
 		ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash",
-		ContextWindow: 128000, MaxOutput: 8192,
+		ContextWindow: 1000000, MaxOutput: 8192,
 		CanReason: true, CanThink: true,
 	},
 	"deepseek-v4-pro": {
 		ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro",
-		ContextWindow: 128000, MaxOutput: 8192,
+		ContextWindow: 1000000, MaxOutput: 8192,
 		CanReason: true, CanThink: true,
 	},
 	"qwen3.6-plus": {
 		ID: "qwen3.6-plus", Name: "Qwen 3.6 Plus",
-		ContextWindow: 131072, MaxOutput: 8192,
+		ContextWindow: 1000000, MaxOutput: 65536,
+		CanReason: true, CanThink: true,
+	},
+	"gpt-5.5": {
+		ID: "gpt-5.5", Name: "GPT-5.5",
+		ContextWindow: 1000000, MaxOutput: 128000,
+		CanReason: true, CanThink: true,
+	},
+	"claude-sonnet-4-6": {
+		ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6",
+		ContextWindow: 1000000, MaxOutput: 64000,
 		CanReason: true, CanThink: true,
 	},
 }
