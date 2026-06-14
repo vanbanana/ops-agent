@@ -134,6 +134,16 @@ func (p *ModelPool) SetOnChange(fn func(active Provider)) {
 	p.onChange = fn
 }
 
+// GetAllFull returns all providers with unmasked credentials.
+// Intended for trusted local CLI use only.
+func (p *ModelPool) GetAllFull() []Provider {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	result := make([]Provider, len(p.providers))
+	copy(result, p.providers)
+	return result
+}
+
 // GetAll returns all providers (public view with masked keys).
 func (p *ModelPool) GetAll() []ProviderPublic {
 	p.mu.RLock()
