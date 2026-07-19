@@ -47,7 +47,7 @@ func main() {
 		BaseURL: cfg.LLMBaseURL,
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
-		Timeout: 60 * time.Second,
+		Timeout: 0,
 	})
 
 	// Initialize tool registry with all probes
@@ -159,7 +159,8 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(120 * time.Second))
+	// 评测需要长时间运行：移除 HTTP handler 级别的 120s 超时上限
+	// r.Use(middleware.Timeout(120 * time.Second))
 
 	// CORS middleware for production deployment
 	r.Use(func(next http.Handler) http.Handler {

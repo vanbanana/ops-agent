@@ -19,10 +19,8 @@ type httpLLMClient struct {
 }
 
 // NewLLMClient creates a new LLM client with the given config.
+// Timeout == 0 means no per-request timeout (rely on context cancellation).
 func NewLLMClient(cfg ClientConfig) LLMClient {
-	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
-	}
 	return &httpLLMClient{
 		config: cfg,
 		client: &http.Client{Timeout: cfg.Timeout},

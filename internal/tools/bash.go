@@ -31,7 +31,7 @@ func (t *BashTool) Description() string {
 - 禁止执行网络请求命令（curl, wget）
 - 禁止写操作命令（除非通过 write tools）
 - 输出截断为 30000 字符
-- 默认超时 30 秒
+- 默认超时 30 秒，最大可指定 300 秒
 
 注意: 优先使用内置探针工具（probe_disk, probe_top 等），仅在探针不满足时使用此工具。`
 }
@@ -46,7 +46,7 @@ func (t *BashTool) Schema() map[string]any {
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "超时秒数（默认30，最大120）",
+				"description": "超时秒数（默认30，最大300）",
 			},
 		},
 		"required": []string{"command"},
@@ -64,8 +64,8 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]any) (Result, er
 	timeoutSec := 30
 	if v, ok := args["timeout"].(float64); ok && v > 0 {
 		timeoutSec = int(v)
-		if timeoutSec > 120 {
-			timeoutSec = 120
+		if timeoutSec > 300 {
+			timeoutSec = 300
 		}
 	}
 
