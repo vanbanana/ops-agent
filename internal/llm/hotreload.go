@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"sync"
-	"time"
 )
 
 // HotReloadClient wraps an LLMClient with ability to swap config at runtime.
@@ -22,10 +21,8 @@ func NewHotReloadClient(cfg ClientConfig) *HotReloadClient {
 }
 
 // Reload swaps the underlying client config (base_url, api_key, model).
+// Timeout == 0 means no per-request timeout (rely on context cancellation).
 func (h *HotReloadClient) Reload(cfg ClientConfig) {
-	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
-	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.config = cfg

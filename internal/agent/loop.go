@@ -16,7 +16,7 @@ import (
 	"ops-agent/internal/tools"
 )
 
-const MaxToolRounds = 10
+const MaxToolRounds = 1000
 
 // Event is an SSE event sent to the client.
 type Event struct {
@@ -531,7 +531,7 @@ func (a *Agent) runSingle(ctx context.Context, traceID, sessionID, userMessage s
 
 	// Max rounds reached
 		out <- Event{Type: "output", Data: map[string]any{
-			"reply": "操作步骤过多，已达到最大轮次限制（10轮），已中止。", "mode": "single",
+			"reply": "操作步骤过多，已达到最大轮次限制（1000轮），已中止。", "mode": "single",
 		}}
 		out <- Event{Type: "done", Data: map[string]any{"trace_id": traceID, "session_id": sessionID, "status": "ok"}}
 }

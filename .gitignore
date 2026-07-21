@@ -60,3 +60,5 @@ docs/*.docx
 # Frontend
 web/node_modules/
 web/dist/
+ops-agent-cli
+ops-agent
